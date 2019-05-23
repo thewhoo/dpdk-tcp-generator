@@ -122,9 +122,9 @@ static uint8_t *tcp_states = NULL;
 /* Source MAC: DE:AD:BE:EF:CA:FE */
 static uint64_t src_mac = 0xFECAEFBEADDE;
 /* Dst MAC */
-static uint64_t dst_mac = 0;
+static uint64_t dst_mac = 0xFFEEDDCCBBAA;
 /* Source IP */
-static uint32_t src_ip_component = IPv4(10, 10, 0, 0);
+static uint32_t src_ip_component = IPv4(10, 10, 192, 0);
 /* Dest IP */
 static uint32_t dst_ip = IPv4(10, 10, 10, 2);
 #define DNS_PORT 53
@@ -136,7 +136,7 @@ static uint32_t dst_ip = IPv4(10, 10, 10, 2);
 static void
 tcp_open(unsigned portid) {
     uint16_t src_port = rte_rand();
-    uint16_t src_ip_rand_octets = rte_rand();
+    uint16_t src_ip_rand_octets = rte_rand() & 0x3fff; /* 14 random bits in IP */
 
     struct rte_mbuf *syn_mbuf = rte_pktmbuf_alloc(tcpgen_pktmbuf_pool);
     if (syn_mbuf == NULL) {
@@ -150,34 +150,40 @@ tcp_open(unsigned portid) {
     struct ether_hdr *eth = rte_pktmbuf_mtod(syn_mbuf, struct ether_hdr *);
     *((uint64_t *) &eth->d_addr.addr_bytes[0]) = dst_mac;
     *((uint64_t *) &eth->s_addr.addr_bytes[0]) = src_mac;
-    eth->ether_type = ETHER_TYPE_IPv4;
+    eth->ether_type = rte_cpu_to_be_16(ETHER_TYPE_IPv4);
 
     /* Initialize L3 header */
     struct ipv4_hdr *ip = rte_pktmbuf_mtod_offset(syn_mbuf, struct ipv4_hdr *,
                                                   sizeof(struct ether_hdr));
     ip->version_ihl = 0x45; /* Version 4 HL 20 (multiplier 5) */
     ip->type_of_service = 0;
-    ip->total_length = sizeof(struct ipv4_hdr) + sizeof(struct tcp_hdr);
+    ip->total_length = rte_cpu_to_be_16(sizeof(struct ipv4_hdr) + sizeof(struct tcp_hdr));
     ip->packet_id = 0;
-    ip->fragment_offset = 0x4000; /* Don't fragment flag set */
+    ip->fragment_offset = rte_cpu_to_be_16(0x4000); /* Don't fragment flag set */
     ip->time_to_live = 64;
     ip->next_proto_id = IPPROTO_TCP;
     ip->hdr_checksum = 0;
-    ip->src_addr = src_ip_component | src_ip_rand_octets;
-    ip->dst_addr = dst_ip;
+    ip->src_addr = rte_cpu_to_be_32(src_ip_component | src_ip_rand_octets);
+    ip->dst_addr = rte_cpu_to_be_32(dst_ip);
+
+    /* Process IP checksum */
+    ip->hdr_checksum = rte_ipv4_cksum(ip);
 
     /* Initialize L4 header */
     struct tcp_hdr *tcp = rte_pktmbuf_mtod_offset(syn_mbuf, struct tcp_hdr *,
                                                   sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr));
-    tcp->src_port = src_port;
-    tcp->dst_port = DNS_PORT;
+    tcp->src_port = rte_cpu_to_be_16(src_port);
+    tcp->dst_port = rte_cpu_to_be_16(DNS_PORT);
     tcp->sent_seq = 0;
     tcp->recv_ack = 0;
     tcp->data_off = 0x50; /* 20 byte (5 * 4) header */
     tcp->tcp_flags = 0x02; /* SYN flag */
-    tcp->rx_win = 0xfaf0;
+    tcp->rx_win = rte_cpu_to_be_16(0xfaf0);
     tcp->cksum = 0;
     tcp->tcp_urp = 0;
+
+    /* Process TCP checksum */
+    tcp->cksum = rte_ipv4_udptcp_cksum(ip, tcp);
 
     /* Set connection state */
     tcp_states[src_ip_rand_octets * 65536 + src_port] = TCP_STATE_SYN;
@@ -509,6 +515,11 @@ main(int argc, char **argv) {
     if (tcpgen_pktmbuf_pool == NULL)
         rte_exit(EXIT_FAILURE, "Cannot init mbuf pool\n");
 
+    /* Allocate TCP state buffer */
+    tcp_states = rte_zmalloc("tcp_state_buffer", 16384 * 65536, 0);
+    if(tcp_states == NULL)
+        rte_exit(EXIT_FAILURE, "Cannot allocate TCP state buffer\n");
+
     /* Initialise each port */
     RTE_ETH_FOREACH_DEV(portid) {
         struct rte_eth_rxconf rxq_conf;
@@ -622,6 +633,10 @@ main(int argc, char **argv) {
         rte_eth_dev_close(portid);
         printf(" Done\n");
     }
+
+    /* Free TCP state buffer */
+    rte_free(tcp_states);
+
     printf("Bye...\n");
 
     return ret;
