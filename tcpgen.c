@@ -503,7 +503,7 @@ tcpgen_main_loop(void) {
                port_stats[portid].rx_rcode[DNS_RCODE_NXDOMAIN],
                port_stats[portid].rx_rcode[DNS_RCODE_NOTIMP],
                port_stats[portid].rx_rcode[DNS_RCODE_REFUSED]);
-        printf("TX bitrate: %f Gbit/s\n\tTX QPS: %f\n\tTX FPS: %f\n\tRX bitrate: %f Gbit/s\n\tRX RPS: %f\n\tRX FPS: %f\n\tResponse rate: %f%%\n",
+        printf("TX bitrate: %f Gbit/s\n\tTX QPS: %.2f\n\tTX FPS: %.2f\n\tRX bitrate: %f Gbit/s\n\tRX RPS: %.2f\n\tRX FPS: %.2f\n\tResponse rate: %.2f%%\n",
                ((port_stats[portid].tx_bytes << 3) / (double) runtime_usec) / 1000,
                (port_stats[portid].tx_queries / (double) runtime_usec) * 1000000,
                (port_stats[portid].tx_packets / (double) runtime_usec) * 1000000,
