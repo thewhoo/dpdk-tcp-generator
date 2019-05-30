@@ -90,8 +90,8 @@ struct tcpgen_port_stats {
     uint64_t tx_packets;
     /* Total TX byte count */
     uint64_t tx_bytes;
-    /* DNS packet TX count */
-    uint64_t tx_dns;
+    /* DNS query TX count */
+    uint64_t tx_queries;
     /* TX dropped count */
     uint64_t tx_dropped;
 
@@ -100,9 +100,9 @@ struct tcpgen_port_stats {
     /* Total RX byte count */
     uint64_t rx_bytes;
     /* DNS packet RX count */
-    uint64_t rx_dns;
-    /* Per-QType stats */
-    uint64_t rx_qtype[DNS_QTYPE_MAX_TYPES];
+    uint64_t rx_responses;
+    /* Per-RCode stats */
+    uint64_t rx_rcode[DNS_RCODE_MAX_TYPES];
 } __rte_cache_aligned;
 
 struct tcpgen_port_stats port_stats[RTE_MAX_ETHPORTS];
@@ -207,15 +207,17 @@ tcpgen_main_loop(void) {
     struct rte_mbuf *m;
     int sent;
     unsigned lcore_id;
-    uint64_t prev_tsc, diff_tsc, cur_tsc, timer_tsc;
+    uint64_t prev_tsc, diff_tsc, cur_tsc, timer_tsc, tx_tsc, tx_diff;
     unsigned i, j, portid, nb_rx;
     struct lcore_queue_conf *qconf;
     const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S *
                                BURST_TX_DRAIN_US;
     struct rte_eth_dev_tx_buffer *buffer;
+    uint64_t start_tsc, stop_tsc;
 
     prev_tsc = 0;
     timer_tsc = 0;
+    tx_tsc = 0;
 
     lcore_id = rte_lcore_id();
     qconf = &lcore_queue_conf[lcore_id];
@@ -235,8 +237,9 @@ tcpgen_main_loop(void) {
 
     }
 
-    while (!force_quit) {
+    start_tsc = rte_rdtsc();
 
+    while (!force_quit) {
         cur_tsc = rte_rdtsc();
 
         /*
@@ -244,57 +247,77 @@ tcpgen_main_loop(void) {
          */
         diff_tsc = cur_tsc - prev_tsc;
         if (unlikely(diff_tsc > drain_tsc)) {
-
             for (i = 0; i < qconf->n_port; i++) {
-
                 portid = qconf->port_list[i];
                 buffer = tx_buffer[portid];
-
-                sent = rte_eth_tx_buffer_flush(portid, 0, buffer);
-                //if (sent)
-                    //port_statistics[portid].tx += sent;
-
+                rte_eth_tx_buffer_flush(portid, 0, buffer);
             }
-
-            /* if timer is enabled */
-            if (timer_period > 0) {
-
-                /* advance the timer */
-                timer_tsc += diff_tsc;
-
-                /* if timer has reached its timeout */
-                if (unlikely(timer_tsc >= timer_period)) {
-
-                    /* do this only on master core */
-                    if (lcore_id == rte_get_master_lcore()) {
-                        //print_stats();
-                        /* reset the timer */
-                        timer_tsc = 0;
-                    }
-                }
-            }
-
             prev_tsc = cur_tsc;
         }
 
         /*
          * Read packet from RX queues
          */
+        tx_diff = cur_tsc - tx_tsc;
         for (i = 0; i < qconf->n_port; i++) {
-
             portid = qconf->port_list[i];
-            tcp_open(portid);
-            //nb_rx = rte_eth_rx_burst(portid, 0,
-            //                         pkts_burst, MAX_PKT_BURST);
 
-            //port_stats[portid].rx_packets += nb_rx;
+            if (tx_diff > tx_tsc_period) {
+                tcp_open(portid);
+                tx_tsc = cur_tsc;
+            }
 
-            //for (j = 0; j < nb_rx; j++) {
-             //   m = pkts_burst[j];
-             //   rte_prefetch0(rte_pktmbuf_mtod(m, void *));
-              //  tcp_open(portid);
-            //}
+            nb_rx = rte_eth_rx_burst(portid, 0,
+                                     pkts_burst, MAX_PKT_BURST);
+
+            port_stats[portid].rx_packets += nb_rx;
+
+            for (j = 0; j < nb_rx; j++) {
+                m = pkts_burst[j];
+                rte_prefetch0(rte_pktmbuf_mtod(m, void *));
+                handle_incoming(m, portid);
+            }
         }
+    }
+
+    for (i = 0; i < qconf->n_port; i++) {
+        portid = qconf->port_list[i];
+        buffer = tx_buffer[portid];
+        rte_eth_tx_buffer_flush(portid, 0, buffer);
+    }
+    prev_tsc = cur_tsc;
+
+    stop_tsc = rte_rdtsc();
+    uint64_t runtime_tsc = stop_tsc - start_tsc;
+    uint64_t runtime_usec = runtime_tsc / (rte_get_tsc_hz() / 1000000);
+    uint64_t runtime_sec = runtime_tsc / rte_get_tsc_hz();
+    printf("Total runtime: %lu microseconds (%lu seconds)\n", runtime_usec, runtime_sec);
+    for (i = 0; i < qconf->n_port; i++) {
+        portid = qconf->port_list[i];
+        printf("Port %d stats:\n\tTX bytes: %lu\n\tTX packets: %lu\n\tTX queries: %lu\n\n\t",
+               portid,
+               port_stats[portid].tx_bytes,
+               port_stats[portid].tx_packets,
+               port_stats[portid].tx_queries);
+        printf("RX bytes: %lu\n\tRX packets: %lu\n\tRX responses: %lu\n\t\t",
+               port_stats[portid].rx_bytes,
+               port_stats[portid].rx_packets,
+               port_stats[portid].rx_responses);
+        printf("NOERROR: %lu\n\t\tFORMERR: %lu\n\t\tSERVFAIL: %lu\n\t\tNXDOMAIN: %lu\n\t\tNOTIMP: %lu\n\t\tREFUSED: %lu\n\n\t",
+               port_stats[portid].rx_rcode[DNS_RCODE_NOERROR],
+               port_stats[portid].rx_rcode[DNS_RCODE_FORMERR],
+               port_stats[portid].rx_rcode[DNS_RCODE_SERVFAIL],
+               port_stats[portid].rx_rcode[DNS_RCODE_NXDOMAIN],
+               port_stats[portid].rx_rcode[DNS_RCODE_NOTIMP],
+               port_stats[portid].rx_rcode[DNS_RCODE_REFUSED]);
+        printf("TX bitrate: %f Gbit/s\n\tTX QPS: %f\n\tTX FPS: %f\n\tRX bitrate: %f Gbit/s\n\tRX RPS: %f\n\tRX FPS: %f\n\tResponse rate: %f%%\n",
+               ((port_stats[portid].tx_bytes << 3) / (double) runtime_usec) / 1000,
+               (port_stats[portid].tx_queries / (double) runtime_usec) * 1000000,
+               (port_stats[portid].tx_packets / (double) runtime_usec) * 1000000,
+               ((port_stats[portid].rx_bytes << 3) / (double) runtime_usec) / 1000,
+               (port_stats[portid].rx_responses / (double) runtime_usec) * 1000000,
+               (port_stats[portid].rx_packets / (double) runtime_usec) * 1000000,
+               ((port_stats[portid].rx_responses / (double) port_stats[portid].tx_queries)) * 100);
     }
 }
 
@@ -313,7 +336,7 @@ check_all_ports_link_status(uint32_t port_mask) {
     uint8_t count, all_ports_up, print_flag = 0;
     struct rte_eth_link link;
 
-    printf("\nChecking link status");
+    printf("\nChecking link status...");
     fflush(stdout);
     for (count = 0; count <= MAX_CHECK_TIME; count++) {
         if (force_quit)
@@ -357,7 +380,7 @@ check_all_ports_link_status(uint32_t port_mask) {
         /* set the print_flag if all ports up or timeout */
         if (all_ports_up == 1 || count == (MAX_CHECK_TIME - 1)) {
             print_flag = 1;
-            printf("done\n");
+            printf(" done\n");
         }
     }
 }
@@ -445,6 +468,7 @@ main(int argc, char **argv) {
     unsigned nb_ports_in_mask = 0;
     unsigned int nb_lcores = 0;
     unsigned int nb_mbufs;
+    uint64_t start_tsc;
 
     /* init EAL */
     ret = rte_eal_init(argc, argv);
