@@ -683,7 +683,7 @@ main(int argc, char **argv) {
     /* parse application arguments (after the EAL ones) */
     ret = tcpgen_parse_args(argc, argv);
     if (ret < 0)
-        rte_exit(EXIT_FAILURE, "Invalid L2FWD arguments\n");
+        rte_exit(EXIT_FAILURE, "Invalid TCPGEN arguments\n");
 
     /* convert to number of cycles */
     timer_period *= rte_get_timer_hz();
