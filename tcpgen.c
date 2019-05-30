@@ -190,18 +190,206 @@ tcp_open(unsigned portid) {
     /* Process TCP checksum */
     tcp->cksum = rte_ipv4_udptcp_cksum(ip, tcp);
 
-    /* Set connection state */
-    tcp_states[src_ip_rand_octets * 65536 + src_port] = TCP_STATE_SYN;
-
     /* Send */
-    int sent;
     struct rte_eth_dev_tx_buffer *buffer;
 
     buffer = tx_buffer[portid];
-    sent = rte_eth_tx_buffer(portid, 0, buffer, syn_mbuf);
-    if (sent) {
-        port_stats[portid].tx_bytes += SYN_MBUF_DATALEN;
-        port_stats[portid].tx_packets++;
+    rte_eth_tx_buffer(portid, 0, buffer, syn_mbuf);
+    port_stats[portid].tx_bytes += SYN_MBUF_DATALEN + 24;
+    port_stats[portid].tx_packets++;
+}
+
+static void
+send_ack(struct rte_mbuf *m, unsigned portid, bool fin) {
+    /* Pointers to headers */
+    struct ether_hdr *eth = mbuf_eth_ptr(m);
+    struct ipv4_hdr *ip = mbuf_ip4_ptr(m);
+    struct tcp_hdr *tcp = mbuf_tcp_ptr(m);
+
+    uint8_t data_offset = tcp->data_off; /* data_off * 4 = byte offset */
+    int16_t payload_len = rte_be_to_cpu_16(ip->total_length) - sizeof(struct ipv4_hdr) - (data_offset >> 2);
+
+    m->pkt_len = m->data_len = ACK_MBUF_DATALEN;
+
+    /* Swap MAC addresses */
+    *((uint64_t *) &eth->d_addr.addr_bytes[0]) ^= *((uint64_t *) &eth->s_addr.addr_bytes[0]) & 0x0000FFFFFFFFFFFF;
+    *((uint64_t *) &eth->s_addr.addr_bytes[0]) ^= *((uint64_t *) &eth->d_addr.addr_bytes[0]) & 0x0000FFFFFFFFFFFF;
+    *((uint64_t *) &eth->d_addr.addr_bytes[0]) ^= *((uint64_t *) &eth->s_addr.addr_bytes[0]) & 0x0000FFFFFFFFFFFF;
+
+    /* Swap IP addresses */
+    ip->src_addr ^= ip->dst_addr;
+    ip->dst_addr ^= ip->src_addr;
+    ip->src_addr ^= ip->dst_addr;
+
+    ip->packet_id = 0;
+    ip->total_length = rte_cpu_to_be_16(sizeof(struct ipv4_hdr) + sizeof(struct tcp_hdr));
+    ip->hdr_checksum = 0;
+
+    /* Update TCP header */
+    tcp->src_port ^= tcp->dst_port;
+    tcp->dst_port ^= tcp->src_port;
+    tcp->src_port ^= tcp->dst_port;
+
+    tcp->sent_seq ^= tcp->recv_ack;
+    tcp->recv_ack ^= tcp->sent_seq;
+    tcp->sent_seq ^= tcp->recv_ack;
+
+    if (payload_len > 0)
+        tcp->recv_ack = rte_cpu_to_be_32(rte_be_to_cpu_32(tcp->recv_ack) + payload_len);
+    else
+        tcp->recv_ack += 0x01000000; /* ACK sender's seq +1 */
+    //tcp->tcp_flags |= 0x10; /* ACK bit set */
+    //tcp->tcp_flags &= 0xfd; /* clear SYN */
+    tcp->tcp_flags = 0x10; /* set ACK */
+    if (fin)
+        tcp->tcp_flags |= 0x01;
+
+    tcp->data_off = 0x50; /* 20 byte (5 * 4) header */
+    tcp->cksum = 0;
+
+    /* Update cksums */
+    ip->hdr_checksum = rte_ipv4_cksum(ip);
+    tcp->cksum = rte_ipv4_udptcp_cksum(ip, tcp);
+
+    /* Send */
+    struct rte_eth_dev_tx_buffer *buffer;
+
+    buffer = tx_buffer[portid];
+    rte_eth_tx_buffer(portid, 0, buffer, m);
+    port_stats[portid].tx_bytes += ACK_MBUF_DATALEN;
+    port_stats[portid].tx_packets++;
+}
+
+#define DNS_PACKET_MIN_LEN (sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) + sizeof(struct tcp_hdr) + sizeof(struct dns_hdr))
+#define DNS_STATIC_QUERY_LEN (DNS_PACKET_MIN_LEN + sizeof(struct dns_query_static))
+
+static void
+generate_query(struct rte_mbuf *m, unsigned portid) {
+    /* Pointers to headers */
+    struct ether_hdr *eth = mbuf_eth_ptr(m);
+    struct ipv4_hdr *ip = mbuf_ip4_ptr(m);
+    struct tcp_hdr *tcp = mbuf_tcp_ptr(m);
+    struct dns_hdr *dns_hdr = mbuf_dns_header_ptr(m);
+    struct dns_query_static *dns_query = mbuf_dns_query_ptr(m);
+
+    m->pkt_len = m->data_len = DNS_STATIC_QUERY_LEN;
+
+    ip->total_length = rte_cpu_to_be_16(DNS_STATIC_QUERY_LEN - sizeof(struct ether_hdr));
+    ip->hdr_checksum = 0;
+
+    tcp->tcp_flags = 0x18; /* ACK + PSH */
+    tcp->cksum = 0;
+
+    dns_hdr->len = rte_cpu_to_be_16(
+            sizeof(struct dns_hdr) + sizeof(struct dns_query_static) - 2); /* Length bytes not counted */
+    dns_hdr->tx_id = rte_rand();
+    dns_hdr->flags = 0;
+    dns_hdr->q_cnt = rte_cpu_to_be_16(1);
+    dns_hdr->an_cnt = 0;
+    dns_hdr->auth_cnt = 0;
+    dns_hdr->additional_cnt = 0;
+
+    dns_query->qname[0] = 1;
+    dns_query->qname[1] = 'a';
+    dns_query->qname[2] = 4;
+    dns_query->qname[3] = 't';
+    dns_query->qname[4] = 'e';
+    dns_query->qname[5] = 's';
+    dns_query->qname[6] = 't';
+    dns_query->qname[7] = 0;
+
+    dns_query->qtype = rte_cpu_to_be_16(DNS_QTYPE_A);
+    dns_query->qclass = rte_cpu_to_be_16(DNS_QCLASS_IN);
+
+    /* Update cksums */
+    ip->hdr_checksum = rte_ipv4_cksum(ip);
+    tcp->cksum = rte_ipv4_udptcp_cksum(ip, tcp);
+
+    /* Send */
+    struct rte_eth_dev_tx_buffer *buffer;
+
+    buffer = tx_buffer[portid];
+    rte_eth_tx_buffer(portid, 0, buffer, m);
+    port_stats[portid].tx_bytes += DNS_STATIC_QUERY_LEN;
+    port_stats[portid].tx_packets++;
+    port_stats[portid].tx_queries++;
+}
+
+struct rte_mbuf *
+mbuf_clone(struct rte_mbuf *m) {
+    struct rte_mbuf *clone = rte_pktmbuf_alloc(tcpgen_pktmbuf_pool);
+    if (clone == NULL)
+        rte_exit(EXIT_FAILURE, "mbuf clone - mbuf alloc failed\n");
+
+    clone->pkt_len = clone->data_len = m->data_len;
+    rte_memcpy(rte_pktmbuf_mtod(clone, void *), rte_pktmbuf_mtod(m, const void *), m->data_len);
+
+    return clone;
+}
+
+static void
+response_classify(struct rte_mbuf *m, unsigned portid) {
+    struct dns_hdr *dns_hdr = mbuf_dns_header_ptr(m);
+    uint8_t rcode = rte_be_to_cpu_16(dns_hdr->flags) & 0x4;
+    port_stats[portid].rx_rcode[rcode]++;
+}
+
+#define MIN_PKT_LEN SYN_MBUF_DATALEN
+
+/* Incoming packet handler */
+static void
+handle_incoming(struct rte_mbuf *m, unsigned portid) {
+
+    port_stats[portid].rx_bytes += m->pkt_len;
+
+    /* Ensure that at least Ethernet, IP and TCP headers are present */
+    if (m->pkt_len < SYN_MBUF_DATALEN) {
+        rte_pktmbuf_free(m);
+        return;
+    }
+
+    /* Pointers to headers */
+    struct ether_hdr *eth = mbuf_eth_ptr(m);
+    struct ipv4_hdr *ip = mbuf_ip4_ptr(m);
+    struct tcp_hdr *tcp = mbuf_tcp_ptr(m);
+
+    /* Discard non-DNS traffic */
+    if (rte_be_to_cpu_16(eth->ether_type) != ETHER_TYPE_IPv4) {
+        rte_pktmbuf_free(m);
+        return;
+    }
+
+    if (ip->next_proto_id != IPPROTO_TCP) {
+        rte_pktmbuf_free(m);
+        return;
+    }
+
+    if (rte_be_to_cpu_16(tcp->src_port) != DNS_PORT) {
+        rte_pktmbuf_free(m);
+        return;
+    }
+
+    /* If this is a SYN-ACK, generate ACK and DNS query */
+    if ((tcp->tcp_flags & 0x12) == 0x12) {
+        rte_mbuf_refcnt_update(m, 1); /* Keep mbuf for cloning into query */
+        send_ack(m, portid, false);
+        struct rte_mbuf *m_clone = mbuf_clone(m);
+        rte_mbuf_refcnt_update(m, -1);
+        generate_query(m_clone, portid);
+    }
+        /* Generate ACK if SYN or FIN is set */
+    else if (tcp->tcp_flags & 0x03) {
+        send_ack(m, portid, false);
+    }
+        /* Handle DNS query response */
+    else if (m->pkt_len > DNS_STATIC_QUERY_LEN) {
+        port_stats[portid].rx_responses++;
+        rte_mbuf_refcnt_update(m, 1); /* Keep mbuf for RCODE classification */
+        send_ack(m, portid, true);
+        response_classify(m, portid);
+        rte_mbuf_refcnt_update(m, -1);
+    } else {
+        rte_pktmbuf_free(m);
     }
 }
 
@@ -544,11 +732,6 @@ main(int argc, char **argv) {
     if (tcpgen_pktmbuf_pool == NULL)
         rte_exit(EXIT_FAILURE, "Cannot init mbuf pool\n");
 
-    /* Allocate TCP state buffer */
-    tcp_states = rte_zmalloc("tcp_state_buffer", 16384 * 65536, 0);
-    if(tcp_states == NULL)
-        rte_exit(EXIT_FAILURE, "Cannot allocate TCP state buffer\n");
-
     /* Initialise each port */
     RTE_ETH_FOREACH_DEV(portid) {
         struct rte_eth_rxconf rxq_conf;
@@ -662,9 +845,6 @@ main(int argc, char **argv) {
         rte_eth_dev_close(portid);
         printf(" Done\n");
     }
-
-    /* Free TCP state buffer */
-    rte_free(tcp_states);
 
     printf("Bye...\n");
 
