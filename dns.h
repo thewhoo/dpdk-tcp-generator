@@ -5,6 +5,8 @@
 #ifndef DPDK_TCP_GENERATOR_DNS_H
 #define DPDK_TCP_GENERATOR_DNS_H
 
+#include <stdint.h>
+
 /**
  * DNS query types
  */
@@ -33,7 +35,23 @@
 /**
  * DNS query classes
  */
-#define DNS_QCLASS_IN = 1
-#define DNS_QCLASS_CH = 3
+#define DNS_QCLASS_IN 1
+#define DNS_QCLASS_CH 3
+
+struct dns_hdr {
+    uint16_t len;
+    uint16_t tx_id;
+    uint16_t flags;
+    uint16_t q_cnt;
+    uint16_t an_cnt;
+    uint16_t auth_cnt;
+    uint16_t additional_cnt;
+} __attribute__((__packed__));
+
+struct dns_query_static {
+    uint8_t qname[8];
+    uint16_t qtype;
+    uint16_t qclass;
+} __attribute__((__packed__));
 
 #endif //DPDK_TCP_GENERATOR_DNS_H
