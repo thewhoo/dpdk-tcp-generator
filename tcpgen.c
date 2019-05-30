@@ -237,7 +237,7 @@ send_ack(struct rte_mbuf *m, unsigned portid, bool fin) {
     if (payload_len > 0)
         tcp->recv_ack = rte_cpu_to_be_32(rte_be_to_cpu_32(tcp->recv_ack) + payload_len);
     else
-        tcp->recv_ack += 0x01000000; /* ACK sender's seq +1 */
+        tcp->recv_ack = rte_cpu_to_be_32(rte_be_to_cpu_32(tcp->recv_ack) + 1); /* ACK sender's seq +1 */
     //tcp->tcp_flags |= 0x10; /* ACK bit set */
     //tcp->tcp_flags &= 0xfd; /* clear SYN */
     tcp->tcp_flags = 0x10; /* set ACK */
