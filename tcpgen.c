@@ -582,7 +582,8 @@ check_all_ports_link_status(uint32_t port_mask) {
 static void
 tcpgen_usage(const char *prgname) {
     printf("%s [EAL options] -- -p PORTMASK\n"
-           "  -p PORTMASK: hexadecimal bitmask of ports to generate traffic on\n",
+           "  -p PORTMASK: hexadecimal bitmask of ports to generate traffic on\n"
+           "  -t TCP GAP: tsc delay before opening a new TCP connection\n",
            prgname);
 }
 
@@ -604,6 +605,7 @@ tcpgen_parse_portmask(const char *portmask) {
 
 static const char short_options[] =
         "p:"  /* portmask */
+        "t:"  /* tcp gap */
 ;
 
 /* Parse the argument given in the command line of the application */
@@ -625,6 +627,10 @@ tcpgen_parse_args(int argc, char **argv) {
                     tcpgen_usage(prgname);
                     return -1;
                 }
+                break;
+
+            case 't':
+                tx_tsc_period = strtoull(optarg, NULL, 10);
                 break;
 
             default:
