@@ -111,22 +111,23 @@ struct tcpgen_port_stats port_stats[RTE_MAX_ETHPORTS];
 /* A tsc-based timer responsible for triggering statistics printout */
 static uint64_t timer_period = 10; /* default period is 10 seconds */
 
+static uint64_t tx_tsc_period = 1000000000;
+//static uint64_t tx_tsc_period = 0;
+
 #define SYN_MBUF_DATALEN ( \
     sizeof(struct ether_hdr) + \
     sizeof(struct ipv4_hdr) + \
     sizeof(struct tcp_hdr) )
-#define ACK_MBUF_DATALEN = SYN_MBUF_DATALEN
+#define ACK_MBUF_DATALEN SYN_MBUF_DATALEN
 
-/* TCP state table */
-static uint8_t *tcp_states = NULL;
 /* Source MAC: DE:AD:BE:EF:CA:FE */
 static uint64_t src_mac = 0xFECAEFBEADDE;
 /* Dst MAC */
-static uint64_t dst_mac = 0xFFEEDDCCBBAA;
+static uint64_t dst_mac = 0x09619BBAE290;
 /* Source IP */
-static uint32_t src_ip_component = IPv4(10, 10, 192, 0);
+static uint32_t src_ip_component = IPv4(10, 10, 64, 0);
 /* Dest IP */
-static uint32_t dst_ip = IPv4(10, 10, 10, 2);
+static uint32_t dst_ip = IPv4(10, 99, 0, 1);
 #define DNS_PORT 53
 #define TCP_STATE_NONE 0
 #define TCP_STATE_SYN 1
@@ -142,7 +143,7 @@ static uint32_t dst_ip = IPv4(10, 10, 10, 2);
 static void
 tcp_open(unsigned portid) {
     uint16_t src_port = rte_rand();
-    uint16_t src_ip_rand_octets = rte_rand() & 0x3fff; /* 14 random bits in IP */
+    uint16_t src_ip_rand_octets = rte_rand() & ((1 << 14) - 1); /* 14 random bits in IP */
 
     struct rte_mbuf *syn_mbuf = rte_pktmbuf_alloc(tcpgen_pktmbuf_pool);
     if (syn_mbuf == NULL) {
