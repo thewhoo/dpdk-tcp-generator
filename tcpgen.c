@@ -132,6 +132,12 @@ static uint32_t dst_ip = IPv4(10, 10, 10, 2);
 #define TCP_STATE_SYN 1
 #define TCP_STATE_OPEN 2
 
+#define mbuf_eth_ptr(m) (rte_pktmbuf_mtod((m), struct ether_hdr *))
+#define mbuf_ip4_ptr(m) (rte_pktmbuf_mtod_offset((m), struct ipv4_hdr *, sizeof(struct ether_hdr)))
+#define mbuf_tcp_ptr(m) (rte_pktmbuf_mtod_offset((m), struct tcp_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr)))
+#define mbuf_dns_header_ptr(m) (rte_pktmbuf_mtod_offset((m), struct dns_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) + sizeof(struct tcp_hdr)))
+#define mbuf_dns_query_ptr(m) (rte_pktmbuf_mtod_offset((m), struct dns_query_static *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) + sizeof(struct tcp_hdr) + sizeof(struct dns_hdr)))
+
 /* TCP connection generator */
 static void
 tcp_open(unsigned portid) {
@@ -147,14 +153,13 @@ tcp_open(unsigned portid) {
     syn_mbuf->pkt_len = syn_mbuf->data_len = SYN_MBUF_DATALEN;
 
     /* Initialize L2 header */
-    struct ether_hdr *eth = rte_pktmbuf_mtod(syn_mbuf, struct ether_hdr *);
+    struct ether_hdr *eth = mbuf_eth_ptr(syn_mbuf);
     *((uint64_t *) &eth->d_addr.addr_bytes[0]) = dst_mac;
     *((uint64_t *) &eth->s_addr.addr_bytes[0]) = src_mac;
     eth->ether_type = rte_cpu_to_be_16(ETHER_TYPE_IPv4);
 
     /* Initialize L3 header */
-    struct ipv4_hdr *ip = rte_pktmbuf_mtod_offset(syn_mbuf, struct ipv4_hdr *,
-                                                  sizeof(struct ether_hdr));
+    struct ipv4_hdr *ip = mbuf_ip4_ptr(syn_mbuf);
     ip->version_ihl = 0x45; /* Version 4 HL 20 (multiplier 5) */
     ip->type_of_service = 0;
     ip->total_length = rte_cpu_to_be_16(sizeof(struct ipv4_hdr) + sizeof(struct tcp_hdr));
@@ -170,8 +175,7 @@ tcp_open(unsigned portid) {
     ip->hdr_checksum = rte_ipv4_cksum(ip);
 
     /* Initialize L4 header */
-    struct tcp_hdr *tcp = rte_pktmbuf_mtod_offset(syn_mbuf, struct tcp_hdr *,
-                                                  sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr));
+    struct tcp_hdr *tcp = mbuf_tcp_ptr(syn_mbuf);
     tcp->src_port = rte_cpu_to_be_16(src_port);
     tcp->dst_port = rte_cpu_to_be_16(DNS_PORT);
     tcp->sent_seq = 0;
