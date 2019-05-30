@@ -19,6 +19,18 @@
 #define DNS_QTYPE_MAX_TYPES 1 << 8
 
 /**
+ * DNS RCodes
+ */
+#define DNS_RCODE_NOERROR   0
+#define DNS_RCODE_FORMERR   1
+#define DNS_RCODE_SERVFAIL  2
+#define DNS_RCODE_NXDOMAIN  3
+#define DNS_RCODE_NOTIMP    4
+#define DNS_RCODE_REFUSED   5
+
+#define DNS_RCODE_MAX_TYPES 1 << 8
+
+/**
  * DNS query classes
  */
 #define DNS_QCLASS_IN = 1
