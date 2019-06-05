@@ -261,7 +261,6 @@ send_ack(struct rte_mbuf *m, unsigned portid, bool fin) {
 static void
 generate_query(struct rte_mbuf *m, unsigned portid) {
     /* Pointers to headers */
-    struct ether_hdr *eth = mbuf_eth_ptr(m);
     struct ipv4_hdr *ip = mbuf_ip4_ptr(m);
     struct tcp_hdr *tcp = mbuf_tcp_ptr(m);
     struct dns_hdr *dns_hdr = mbuf_dns_header_ptr(m);
@@ -393,9 +392,8 @@ static void
 tcpgen_main_loop(void) {
     struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
     struct rte_mbuf *m;
-    int sent;
     unsigned lcore_id;
-    uint64_t prev_tsc, diff_tsc, cur_tsc, timer_tsc, tx_tsc, tx_diff;
+    uint64_t prev_tsc, diff_tsc, cur_tsc, tx_tsc, tx_diff;
     unsigned i, j, portid, nb_rx;
     struct lcore_queue_conf *qconf;
     const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S *
@@ -404,7 +402,6 @@ tcpgen_main_loop(void) {
     uint64_t start_tsc, stop_tsc;
 
     prev_tsc = 0;
-    timer_tsc = 0;
     tx_tsc = 0;
 
     lcore_id = rte_lcore_id();
@@ -473,7 +470,6 @@ tcpgen_main_loop(void) {
         buffer = tx_buffer[portid];
         rte_eth_tx_buffer_flush(portid, 0, buffer);
     }
-    prev_tsc = cur_tsc;
 
     stop_tsc = rte_rdtsc();
     uint64_t runtime_tsc = stop_tsc - start_tsc;
@@ -728,7 +724,6 @@ main(int argc, char **argv) {
     unsigned nb_ports_in_mask = 0;
     unsigned int nb_lcores = 0;
     unsigned int nb_mbufs;
-    uint64_t start_tsc;
 
     /* init EAL */
     ret = rte_eal_init(argc, argv);
