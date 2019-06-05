@@ -49,18 +49,16 @@ static volatile bool force_quit;
 #define RTE_LOGTYPE_TCPGEN RTE_LOGTYPE_USER1
 
 #define MAX_PKT_BURST 32
-#define BURST_TX_DRAIN_US 100 /* TX drain every ~100us */
+#define BURST_TX_DRAIN_US 100 // TX drain every ~100us
 #define MEMPOOL_CACHE_SIZE 256
 
-/*
- * Configurable number of RX/TX ring descriptors
- */
+// Configurable number of RX/TX ring descriptors
 #define RTE_TEST_RX_DESC_DEFAULT 1024
 #define RTE_TEST_TX_DESC_DEFAULT 1024
 static uint16_t nb_rxd = RTE_TEST_RX_DESC_DEFAULT;
 static uint16_t nb_txd = RTE_TEST_TX_DESC_DEFAULT;
 
-/* mask of enabled ports */
+// mask of enabled ports
 static uint32_t tcpgen_enabled_port_mask = 0;
 
 static unsigned int tcpgen_rx_queue_per_lcore = 1;
@@ -87,22 +85,22 @@ static struct rte_eth_conf port_conf = {
 struct rte_mempool *tcpgen_pktmbuf_pool = NULL;
 
 struct tcpgen_port_stats {
-    /* Total TX packet count */
+    // Total TX packet count
     uint64_t tx_packets;
-    /* Total TX byte count */
+    // Total TX byte count
     uint64_t tx_bytes;
-    /* DNS query TX count */
+    // DNS query TX count
     uint64_t tx_queries;
-    /* TX dropped count */
+    // TX dropped count
     uint64_t tx_dropped;
 
-    /* Total RX packet count */
+    // Total RX packet count
     uint64_t rx_packets;
-    /* Total RX byte count */
+    // Total RX byte count
     uint64_t rx_bytes;
-    /* DNS packet RX count */
+    // DNS packet RX count
     uint64_t rx_responses;
-    /* Per-RCode stats */
+    // Per-RCode stats
     uint64_t rx_rcode[DNS_RCODE_MAX_TYPES];
 } __rte_cache_aligned;
 
@@ -124,9 +122,6 @@ static uint8_t src_ip_mask[IP_ADDR_LEN];
 static uint8_t dst_ip[IP_ADDR_LEN];
 
 #define DNS_PORT 53
-#define TCP_STATE_NONE 0
-#define TCP_STATE_SYN 1
-#define TCP_STATE_OPEN 2
 
 #define mbuf_eth_ptr(m) (rte_pktmbuf_mtod((m), struct ether_hdr *))
 #define mbuf_ip4_ptr(m) (rte_pktmbuf_mtod_offset((m), struct ipv4_hdr *, sizeof(struct ether_hdr)))
@@ -134,11 +129,11 @@ static uint8_t dst_ip[IP_ADDR_LEN];
 #define mbuf_dns_header_ptr(m) (rte_pktmbuf_mtod_offset((m), struct dns_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) + sizeof(struct tcp_hdr)))
 #define mbuf_dns_query_ptr(m) (rte_pktmbuf_mtod_offset((m), struct dns_query_static *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) + sizeof(struct tcp_hdr) + sizeof(struct dns_hdr)))
 
-/* TCP connection generator */
+// TCP connection generator
 static void
 tcp_open(unsigned portid) {
     uint16_t src_port = rte_rand();
-    uint16_t src_ip_rand_octets = rte_rand() & ((1 << 14) - 1); /* 14 random bits in IP */
+    uint16_t src_ip_rand_octets = rte_rand() & ((1 << 14) - 1); // 14 random bits in IP
 
     struct rte_mbuf *syn_mbuf = rte_pktmbuf_alloc(tcpgen_pktmbuf_pool);
     if (syn_mbuf == NULL) {
@@ -148,44 +143,44 @@ tcp_open(unsigned portid) {
 
     syn_mbuf->pkt_len = syn_mbuf->data_len = SYN_MBUF_DATALEN;
 
-    /* Initialize L2 header */
+    // Initialize L2 header
     struct ether_hdr *eth = mbuf_eth_ptr(syn_mbuf);
     memcpy(&eth->d_addr.addr_bytes[0], &dst_mac[0], ETHER_ADDR_LEN);
     memcpy(&eth->s_addr.addr_bytes[0], &src_mac[0], ETHER_ADDR_LEN);
     eth->ether_type = rte_cpu_to_be_16(ETHER_TYPE_IPv4);
 
-    /* Initialize L3 header */
+    // Initialize L3 header
     struct ipv4_hdr *ip = mbuf_ip4_ptr(syn_mbuf);
-    ip->version_ihl = 0x45; /* Version 4 HL 20 (multiplier 5) */
+    ip->version_ihl = 0x45; // Version 4 HL 20 (multiplier 5)
     ip->type_of_service = 0;
     ip->total_length = rte_cpu_to_be_16(sizeof(struct ipv4_hdr) + sizeof(struct tcp_hdr));
     ip->packet_id = 0;
-    ip->fragment_offset = rte_cpu_to_be_16(0x4000); /* Don't fragment flag set */
+    ip->fragment_offset = rte_cpu_to_be_16(0x4000); // Don't fragment flag set
     ip->time_to_live = 64;
     ip->next_proto_id = IPPROTO_TCP;
     ip->hdr_checksum = 0;
     ip->src_addr = rte_cpu_to_be_32(*((uint32_t *) src_ip_mask) | src_ip_rand_octets);
     ip->dst_addr = rte_cpu_to_be_32(*((uint32_t *) dst_ip));
 
-    /* Process IP checksum */
+    // Process IP checksum
     ip->hdr_checksum = rte_ipv4_cksum(ip);
 
-    /* Initialize L4 header */
+    // Initialize L4 header
     struct tcp_hdr *tcp = mbuf_tcp_ptr(syn_mbuf);
     tcp->src_port = rte_cpu_to_be_16(src_port);
     tcp->dst_port = rte_cpu_to_be_16(DNS_PORT);
     tcp->sent_seq = 0;
     tcp->recv_ack = 0;
-    tcp->data_off = 0x50; /* 20 byte (5 * 4) header */
-    tcp->tcp_flags = 0x02; /* SYN flag */
+    tcp->data_off = 0x50; // 20 byte (5 * 4) header
+    tcp->tcp_flags = 0x02; // SYN flag
     tcp->rx_win = rte_cpu_to_be_16(0xfaf0);
     tcp->cksum = 0;
     tcp->tcp_urp = 0;
 
-    /* Process TCP checksum */
+    // Process TCP checksum
     tcp->cksum = rte_ipv4_udptcp_cksum(ip, tcp);
 
-    /* Send */
+    // Send
     struct rte_eth_dev_tx_buffer *buffer;
 
     buffer = tx_buffer[portid];
@@ -196,22 +191,22 @@ tcp_open(unsigned portid) {
 
 static void
 send_ack(struct rte_mbuf *m, unsigned portid, bool fin) {
-    /* Pointers to headers */
+    // Pointers to headers
     struct ether_hdr *eth = mbuf_eth_ptr(m);
     struct ipv4_hdr *ip = mbuf_ip4_ptr(m);
     struct tcp_hdr *tcp = mbuf_tcp_ptr(m);
 
-    uint8_t data_offset = tcp->data_off; /* data_off * 4 = byte offset */
+    uint8_t data_offset = tcp->data_off; // data_off * 4 = byte offset
     int16_t payload_len = rte_be_to_cpu_16(ip->total_length) - sizeof(struct ipv4_hdr) - (data_offset >> 2);
 
     m->pkt_len = m->data_len = ACK_MBUF_DATALEN;
 
-    /* Swap MAC addresses */
+    // Swap MAC addresses
     *((uint64_t *) &eth->d_addr.addr_bytes[0]) ^= *((uint64_t *) &eth->s_addr.addr_bytes[0]) & 0x0000FFFFFFFFFFFF;
     *((uint64_t *) &eth->s_addr.addr_bytes[0]) ^= *((uint64_t *) &eth->d_addr.addr_bytes[0]) & 0x0000FFFFFFFFFFFF;
     *((uint64_t *) &eth->d_addr.addr_bytes[0]) ^= *((uint64_t *) &eth->s_addr.addr_bytes[0]) & 0x0000FFFFFFFFFFFF;
 
-    /* Swap IP addresses */
+    // Swap IP addresses
     ip->src_addr ^= ip->dst_addr;
     ip->dst_addr ^= ip->src_addr;
     ip->src_addr ^= ip->dst_addr;
@@ -220,7 +215,7 @@ send_ack(struct rte_mbuf *m, unsigned portid, bool fin) {
     ip->total_length = rte_cpu_to_be_16(sizeof(struct ipv4_hdr) + sizeof(struct tcp_hdr));
     ip->hdr_checksum = 0;
 
-    /* Update TCP header */
+    // Update TCP header
     tcp->src_port ^= tcp->dst_port;
     tcp->dst_port ^= tcp->src_port;
     tcp->src_port ^= tcp->dst_port;
@@ -232,21 +227,20 @@ send_ack(struct rte_mbuf *m, unsigned portid, bool fin) {
     if (payload_len > 0)
         tcp->recv_ack = rte_cpu_to_be_32(rte_be_to_cpu_32(tcp->recv_ack) + payload_len);
     else
-        tcp->recv_ack = rte_cpu_to_be_32(rte_be_to_cpu_32(tcp->recv_ack) + 1); /* ACK sender's seq +1 */
-    //tcp->tcp_flags |= 0x10; /* ACK bit set */
-    //tcp->tcp_flags &= 0xfd; /* clear SYN */
-    tcp->tcp_flags = 0x10; /* set ACK */
+        tcp->recv_ack = rte_cpu_to_be_32(rte_be_to_cpu_32(tcp->recv_ack) + 1); // ACK sender's seq +1
+
+    tcp->tcp_flags = 0x10; // set ACK
     if (fin)
         tcp->tcp_flags |= 0x01;
 
-    tcp->data_off = 0x50; /* 20 byte (5 * 4) header */
+    tcp->data_off = 0x50; // 20 byte (5 * 4) header
     tcp->cksum = 0;
 
-    /* Update cksums */
+    // Update cksums
     ip->hdr_checksum = rte_ipv4_cksum(ip);
     tcp->cksum = rte_ipv4_udptcp_cksum(ip, tcp);
 
-    /* Send */
+    // Send
     struct rte_eth_dev_tx_buffer *buffer;
 
     buffer = tx_buffer[portid];
@@ -260,7 +254,7 @@ send_ack(struct rte_mbuf *m, unsigned portid, bool fin) {
 
 static void
 generate_query(struct rte_mbuf *m, unsigned portid) {
-    /* Pointers to headers */
+    // Pointers to headers
     struct ipv4_hdr *ip = mbuf_ip4_ptr(m);
     struct tcp_hdr *tcp = mbuf_tcp_ptr(m);
     struct dns_hdr *dns_hdr = mbuf_dns_header_ptr(m);
@@ -271,11 +265,11 @@ generate_query(struct rte_mbuf *m, unsigned portid) {
     ip->total_length = rte_cpu_to_be_16(DNS_STATIC_QUERY_LEN - sizeof(struct ether_hdr));
     ip->hdr_checksum = 0;
 
-    tcp->tcp_flags = 0x18; /* ACK + PSH */
+    tcp->tcp_flags = 0x18; // ACK + PSH
     tcp->cksum = 0;
 
     dns_hdr->len = rte_cpu_to_be_16(
-            sizeof(struct dns_hdr) + sizeof(struct dns_query_static) - 2); /* Length bytes not counted */
+            sizeof(struct dns_hdr) + sizeof(struct dns_query_static) - 2); // Length bytes not counted
     dns_hdr->tx_id = rte_rand();
     dns_hdr->flags = 0;
     dns_hdr->q_cnt = rte_cpu_to_be_16(1);
@@ -295,11 +289,11 @@ generate_query(struct rte_mbuf *m, unsigned portid) {
     dns_query->qtype = rte_cpu_to_be_16(DNS_QTYPE_A);
     dns_query->qclass = rte_cpu_to_be_16(DNS_QCLASS_IN);
 
-    /* Update cksums */
+    // Update cksums
     ip->hdr_checksum = rte_ipv4_cksum(ip);
     tcp->cksum = rte_ipv4_udptcp_cksum(ip, tcp);
 
-    /* Send */
+    // Send
     struct rte_eth_dev_tx_buffer *buffer;
 
     buffer = tx_buffer[portid];
@@ -330,24 +324,24 @@ response_classify(struct rte_mbuf *m, unsigned portid) {
 
 #define MIN_PKT_LEN SYN_MBUF_DATALEN
 
-/* Incoming packet handler */
+// Incoming packet handler
 static void
 handle_incoming(struct rte_mbuf *m, unsigned portid) {
 
     port_stats[portid].rx_bytes += m->pkt_len;
 
-    /* Ensure that at least Ethernet, IP and TCP headers are present */
+    // Ensure that at least Ethernet, IP and TCP headers are present
     if (m->pkt_len < SYN_MBUF_DATALEN) {
         rte_pktmbuf_free(m);
         return;
     }
 
-    /* Pointers to headers */
+    // Pointers to headers
     struct ether_hdr *eth = mbuf_eth_ptr(m);
     struct ipv4_hdr *ip = mbuf_ip4_ptr(m);
     struct tcp_hdr *tcp = mbuf_tcp_ptr(m);
 
-    /* Discard non-DNS traffic */
+    // Discard non-DNS traffic
     if (rte_be_to_cpu_16(eth->ether_type) != ETHER_TYPE_IPv4) {
         rte_pktmbuf_free(m);
         return;
@@ -363,22 +357,22 @@ handle_incoming(struct rte_mbuf *m, unsigned portid) {
         return;
     }
 
-    /* If this is a SYN-ACK, generate ACK and DNS query */
+    // If this is a SYN-ACK, generate ACK and DNS query
     if ((tcp->tcp_flags & 0x12) == 0x12) {
-        rte_mbuf_refcnt_update(m, 1); /* Keep mbuf for cloning into query */
+        rte_mbuf_refcnt_update(m, 1); // Keep mbuf for cloning into query
         send_ack(m, portid, false);
         struct rte_mbuf *m_clone = mbuf_clone(m);
         rte_mbuf_refcnt_update(m, -1);
         generate_query(m_clone, portid);
     }
-        /* Generate ACK if SYN or FIN is set */
+        // Generate ACK if SYN or FIN is set
     else if (tcp->tcp_flags & 0x03) {
         send_ack(m, portid, false);
     }
-        /* Handle DNS query response */
+        // Handle DNS query response
     else if (m->pkt_len > DNS_STATIC_QUERY_LEN) {
         port_stats[portid].rx_responses++;
-        rte_mbuf_refcnt_update(m, 1); /* Keep mbuf for RCODE classification */
+        rte_mbuf_refcnt_update(m, 1); // Keep mbuf for RCODE classification
         send_ack(m, portid, true);
         response_classify(m, portid);
         rte_mbuf_refcnt_update(m, -1);
@@ -387,7 +381,6 @@ handle_incoming(struct rte_mbuf *m, unsigned portid) {
     }
 }
 
-/* main processing loop */
 static void
 tcpgen_main_loop(void) {
     struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
@@ -427,9 +420,7 @@ tcpgen_main_loop(void) {
     while (!force_quit) {
         cur_tsc = rte_rdtsc();
 
-        /*
-         * TX burst queue drain
-         */
+        // TX burst queue drain
         diff_tsc = cur_tsc - prev_tsc;
         if (unlikely(diff_tsc > drain_tsc)) {
             for (i = 0; i < qconf->n_port; i++) {
@@ -440,9 +431,7 @@ tcpgen_main_loop(void) {
             prev_tsc = cur_tsc;
         }
 
-        /*
-         * Read packet from RX queues
-         */
+        // Read packet from RX queues
         tx_diff = cur_tsc - tx_tsc;
         for (i = 0; i < qconf->n_port; i++) {
             portid = qconf->port_list[i];
@@ -511,11 +500,11 @@ tcpgen_launch_one_lcore(__attribute__((unused)) void *dummy) {
     return 0;
 }
 
-/* Check the link status of all ports in up to 9s, and print them finally */
+// Check the link status of all ports in up to 9s, and print them
 static void
 check_all_ports_link_status(uint32_t port_mask) {
-#define CHECK_INTERVAL 100 /* 100ms */
-#define MAX_CHECK_TIME 90 /* 9s (90 * 100ms) in total */
+#define CHECK_INTERVAL 100 // 100ms
+#define MAX_CHECK_TIME 90 // 9s (90 * 100ms) in total
     uint16_t portid;
     uint8_t count, all_ports_up, print_flag = 0;
     struct rte_eth_link link;
@@ -533,7 +522,7 @@ check_all_ports_link_status(uint32_t port_mask) {
                 continue;
             memset(&link, 0, sizeof(link));
             rte_eth_link_get_nowait(portid, &link);
-            /* print link status if flag set */
+            // print link status if flag set
             if (print_flag == 1) {
                 if (link.link_status)
                     printf(
@@ -545,13 +534,12 @@ check_all_ports_link_status(uint32_t port_mask) {
                     printf("Port %d Link Down\n", portid);
                 continue;
             }
-            /* clear all_ports_up flag if any link down */
+            // clear all_ports_up flag if any link down
             if (link.link_status == ETH_LINK_DOWN) {
                 all_ports_up = 0;
                 break;
             }
         }
-        /* after finally printing all link status, get out */
         if (print_flag == 1)
             break;
 
@@ -561,7 +549,7 @@ check_all_ports_link_status(uint32_t port_mask) {
             rte_delay_ms(CHECK_INTERVAL);
         }
 
-        /* set the print_flag if all ports up or timeout */
+        // set the print_flag if all ports up or timeout
         if (all_ports_up == 1 || count == (MAX_CHECK_TIME - 1)) {
             print_flag = 1;
             printf(" done\n");
@@ -569,7 +557,6 @@ check_all_ports_link_status(uint32_t port_mask) {
     }
 }
 
-/* display usage */
 static void
 tcpgen_usage(const char *prgname) {
     printf("%s [EAL options] -- -p PORTMASK --src-mac SRC_MAC --dst-mac DST_MAC --src-ip-mask SRC_IP_MASK --dst-ip DST_IP\n"
@@ -587,7 +574,6 @@ tcpgen_parse_portmask(const char *portmask) {
     char *end = NULL;
     unsigned long pm;
 
-    /* parse hexadecimal string */
     pm = strtoul(portmask, &end, 16);
     if ((portmask[0] == '\0') || (end == NULL) || (*end != '\0'))
         return -1;
@@ -599,8 +585,8 @@ tcpgen_parse_portmask(const char *portmask) {
 }
 
 static const char short_options[] =
-        "p:"  /* portmask */
-        "t:"  /* tcp gap */
+        "p:"  // portmask
+        "t:"  // tcp gap
 ;
 
 #define CMD_LINE_OPT_SRC_MAC "src-mac"
@@ -673,7 +659,7 @@ tcpgen_parse_args(int argc, char **argv) {
                 // little-endian int casting
                 scanned = sscanf(optarg, "%hhd.%hhd.%hhd.%hhd", &src_ip_mask[3], &src_ip_mask[2], &src_ip_mask[1],
                                  &src_ip_mask[0]);
-                if(scanned != IP_ADDR_LEN) {
+                if (scanned != IP_ADDR_LEN) {
                     fprintf(stderr, "failed to parse src IP mask\n");
                     tcpgen_usage(prgname);
                     return -1;
@@ -683,7 +669,7 @@ tcpgen_parse_args(int argc, char **argv) {
             case CMD_LINE_OPT_DST_IP_NUM:
                 // little-endian int casting
                 scanned = sscanf(optarg, "%hhd.%hhd.%hhd.%hhd", &dst_ip[3], &dst_ip[2], &dst_ip[1], &dst_ip[0]);
-                if(scanned != IP_ADDR_LEN) {
+                if (scanned != IP_ADDR_LEN) {
                     fprintf(stderr, "failed to parse dest IP\n");
                     tcpgen_usage(prgname);
                     return -1;
@@ -700,7 +686,7 @@ tcpgen_parse_args(int argc, char **argv) {
         argv[optind - 1] = prgname;
 
     ret = optind - 1;
-    optind = 1; /* reset getopt lib */
+    optind = 1; // reset getopt lib
     return ret;
 }
 
@@ -725,7 +711,7 @@ main(int argc, char **argv) {
     unsigned int nb_lcores = 0;
     unsigned int nb_mbufs;
 
-    /* init EAL */
+    // init EAL
     ret = rte_eal_init(argc, argv);
     if (ret < 0)
         rte_exit(EXIT_FAILURE, "Invalid EAL arguments\n");
@@ -736,7 +722,7 @@ main(int argc, char **argv) {
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-    /* parse application arguments (after the EAL ones) */
+    // parse application arguments (after the EAL ones)
     ret = tcpgen_parse_args(argc, argv);
     if (ret < 0)
         rte_exit(EXIT_FAILURE, "Invalid TCPGEN arguments\n");
@@ -745,7 +731,7 @@ main(int argc, char **argv) {
     if (nb_ports == 0)
         rte_exit(EXIT_FAILURE, "No Ethernet ports - bye\n");
 
-    /* check port mask to possible port mask */
+    // check port mask to possible port mask
     if (tcpgen_enabled_port_mask & ~((1 << nb_ports) - 1))
         rte_exit(EXIT_FAILURE, "Invalid portmask; possible (0x%x)\n",
                  (1 << nb_ports) - 1);
@@ -753,15 +739,15 @@ main(int argc, char **argv) {
     rx_lcore_id = 0;
     qconf = NULL;
 
-    /* Initialize the port/queue configuration of each logical core */
+    // Initialize the port/queue configuration of each logical core
     RTE_ETH_FOREACH_DEV(portid) {
-        /* skip ports that are not enabled */
+        // skip ports that are not enabled
         if ((tcpgen_enabled_port_mask & (1 << portid)) == 0)
             continue;
 
         nb_ports_in_mask++;
 
-        /* get the lcore_id for this port */
+        // get the lcore_id for this port
         while (rte_lcore_is_enabled(rx_lcore_id) == 0 ||
                lcore_queue_conf[rx_lcore_id].n_port ==
                tcpgen_rx_queue_per_lcore) {
@@ -771,7 +757,7 @@ main(int argc, char **argv) {
         }
 
         if (qconf != &lcore_queue_conf[rx_lcore_id]) {
-            /* Assigned a new logical core in the loop above. */
+            // Assigned a new logical core in the loop above
             qconf = &lcore_queue_conf[rx_lcore_id];
             nb_lcores++;
         }
@@ -784,28 +770,26 @@ main(int argc, char **argv) {
     nb_mbufs = RTE_MAX(nb_ports * (nb_rxd + nb_txd + MAX_PKT_BURST +
                                    nb_lcores * MEMPOOL_CACHE_SIZE), 8192U);
 
-    /* create the mbuf pool */
+    // create the mbuf pool
     tcpgen_pktmbuf_pool = rte_pktmbuf_pool_create("mbuf_pool", nb_mbufs,
                                                   MEMPOOL_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE,
                                                   rte_socket_id());
     if (tcpgen_pktmbuf_pool == NULL)
         rte_exit(EXIT_FAILURE, "Cannot init mbuf pool\n");
 
-    /* Initialise each port */
+    // Initialise each port
     RTE_ETH_FOREACH_DEV(portid) {
         struct rte_eth_rxconf rxq_conf;
         struct rte_eth_txconf txq_conf;
         struct rte_eth_conf local_port_conf = port_conf;
         struct rte_eth_dev_info dev_info;
 
-        /* skip ports that are not enabled */
         if ((tcpgen_enabled_port_mask & (1 << portid)) == 0) {
             printf("Skipping disabled port %u\n", portid);
             continue;
         }
         nb_ports_available++;
 
-        /* init port */
         printf("Initializing port %u... ", portid);
         fflush(stdout);
         rte_eth_dev_info_get(portid, &dev_info);
@@ -824,7 +808,6 @@ main(int argc, char **argv) {
                      "Cannot adjust number of descriptors: err=%d, port=%u\n",
                      ret, portid);
 
-        /* init one RX queue */
         fflush(stdout);
         rxq_conf = dev_info.default_rxconf;
         rxq_conf.offloads = local_port_conf.rxmode.offloads;
@@ -836,7 +819,7 @@ main(int argc, char **argv) {
             rte_exit(EXIT_FAILURE, "rte_eth_rx_queue_setup:err=%d, port=%u\n",
                      ret, portid);
 
-        /* init one TX queue on each port */
+        // init one TX queue on each port
         fflush(stdout);
         txq_conf = dev_info.default_txconf;
         txq_conf.offloads = local_port_conf.txmode.offloads;
@@ -847,7 +830,7 @@ main(int argc, char **argv) {
             rte_exit(EXIT_FAILURE, "rte_eth_tx_queue_setup:err=%d, port=%u\n",
                      ret, portid);
 
-        /* Initialize TX buffers */
+        // Initialize TX buffers
         tx_buffer[portid] = rte_zmalloc_socket("tx_buffer",
                                                RTE_ETH_TX_BUFFER_SIZE(MAX_PKT_BURST), 0,
                                                rte_eth_dev_socket_id(portid));
@@ -865,7 +848,6 @@ main(int argc, char **argv) {
                      "Cannot set error callback for tx buffer on port %u\n",
                      portid);
 
-        /* Start device */
         ret = rte_eth_dev_start(portid);
         if (ret < 0)
             rte_exit(EXIT_FAILURE, "rte_eth_dev_start:err=%d, port=%u\n",
@@ -875,7 +857,7 @@ main(int argc, char **argv) {
 
         rte_eth_promiscuous_enable(portid);
 
-        /* initialize port stats */
+        // initialize port stats
         memset(&port_stats, 0, sizeof(port_stats));
     }
 
@@ -887,7 +869,7 @@ main(int argc, char **argv) {
     check_all_ports_link_status(tcpgen_enabled_port_mask);
 
     ret = 0;
-    /* launch per-lcore init on every lcore */
+    // launch per-lcore init on every lcore
     rte_eal_mp_remote_launch(tcpgen_launch_one_lcore, NULL, CALL_MASTER);
     RTE_LCORE_FOREACH_SLAVE(lcore_id) {
         if (rte_eal_wait_lcore(lcore_id) < 0) {
