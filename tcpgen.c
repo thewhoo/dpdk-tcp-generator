@@ -120,14 +120,13 @@ static uint64_t tx_tsc_period = 1000000000;
     sizeof(struct tcp_hdr) )
 #define ACK_MBUF_DATALEN SYN_MBUF_DATALEN
 
-/* Source MAC: DE:AD:BE:EF:CA:FE */
-static uint64_t src_mac = 0xFECAEFBEADDE;
-/* Dst MAC */
-static uint64_t dst_mac = 0x09619BBAE290;
-/* Source IP */
-static uint32_t src_ip_component = IPv4(10, 10, 64, 0);
-/* Dest IP */
-static uint32_t dst_ip = IPv4(10, 99, 0, 1);
+static uint8_t src_mac[ETHER_ADDR_LEN];
+static uint8_t dst_mac[ETHER_ADDR_LEN];
+
+#define IP_ADDR_LEN 4
+static uint8_t src_ip_mask[IP_ADDR_LEN];
+static uint8_t dst_ip[IP_ADDR_LEN];
+
 #define DNS_PORT 53
 #define TCP_STATE_NONE 0
 #define TCP_STATE_SYN 1
@@ -155,8 +154,8 @@ tcp_open(unsigned portid) {
 
     /* Initialize L2 header */
     struct ether_hdr *eth = mbuf_eth_ptr(syn_mbuf);
-    *((uint64_t *) &eth->d_addr.addr_bytes[0]) = dst_mac;
-    *((uint64_t *) &eth->s_addr.addr_bytes[0]) = src_mac;
+    memcpy(&eth->d_addr.addr_bytes[0], &dst_mac[0], ETHER_ADDR_LEN);
+    memcpy(&eth->s_addr.addr_bytes[0], &src_mac[0], ETHER_ADDR_LEN);
     eth->ether_type = rte_cpu_to_be_16(ETHER_TYPE_IPv4);
 
     /* Initialize L3 header */
@@ -169,8 +168,8 @@ tcp_open(unsigned portid) {
     ip->time_to_live = 64;
     ip->next_proto_id = IPPROTO_TCP;
     ip->hdr_checksum = 0;
-    ip->src_addr = rte_cpu_to_be_32(src_ip_component | src_ip_rand_octets);
-    ip->dst_addr = rte_cpu_to_be_32(dst_ip);
+    ip->src_addr = rte_cpu_to_be_32(*((uint32_t *) src_ip_mask) | src_ip_rand_octets);
+    ip->dst_addr = rte_cpu_to_be_32(*((uint32_t *) dst_ip));
 
     /* Process IP checksum */
     ip->hdr_checksum = rte_ipv4_cksum(ip);
@@ -581,9 +580,13 @@ check_all_ports_link_status(uint32_t port_mask) {
 /* display usage */
 static void
 tcpgen_usage(const char *prgname) {
-    printf("%s [EAL options] -- -p PORTMASK\n"
-           "  -p PORTMASK: hexadecimal bitmask of ports to generate traffic on\n"
-           "  -t TCP GAP: tsc delay before opening a new TCP connection\n",
+    printf("%s [EAL options] -- -p PORTMASK --src-mac SRC_MAC --dst-mac DST_MAC --src-ip-mask SRC_IP_MASK --dst-ip DST_IP\n"
+           "  -p PORTMASK: Hexadecimal bitmask of ports to generate traffic on\n"
+           "  -t TCP GAP: TSC delay before opening a new TCP connection\n"
+           "  --src-mac: Source MAC address of queries\n"
+           "  --dst-mac: Destination MAC address of queries\n"
+           "  --src-ip-mask: Mask for source IP of queries\n"
+           "  --dst-ip: Destinatio IP of queries\n",
            prgname);
 }
 
@@ -608,18 +611,39 @@ static const char short_options[] =
         "t:"  /* tcp gap */
 ;
 
-/* Parse the argument given in the command line of the application */
+#define CMD_LINE_OPT_SRC_MAC "src-mac"
+#define CMD_LINE_OPT_DST_MAC "dst-mac"
+#define CMD_LINE_OPT_SRC_IP_MASK "src-ip-mask"
+#define CMD_LINE_OPT_DST_IP "dst-ip"
+
+enum {
+    CMD_LINE_OPT_MIN_NUM = 256,
+    CMD_LINE_OPT_SRC_MAC_NUM,
+    CMD_LINE_OPT_DST_MAC_NUM,
+    CMD_LINE_OPT_SRC_IP_MASK_NUM,
+    CMD_LINE_OPT_DST_IP_NUM,
+};
+
+static const struct option long_options[] = {
+        {CMD_LINE_OPT_SRC_MAC,     required_argument, 0, CMD_LINE_OPT_SRC_MAC_NUM},
+        {CMD_LINE_OPT_DST_MAC,     required_argument, 0, CMD_LINE_OPT_DST_MAC_NUM},
+        {CMD_LINE_OPT_SRC_IP_MASK, required_argument, 0, CMD_LINE_OPT_SRC_IP_MASK_NUM},
+        {CMD_LINE_OPT_DST_IP,      required_argument, 0, CMD_LINE_OPT_DST_IP_NUM},
+        {NULL, 0,                                     0, 0}
+};
+
 static int
 tcpgen_parse_args(int argc, char **argv) {
     int opt, ret;
+    int option_index;
+    int scanned;
     char **argvopt;
     char *prgname = argv[0];
 
     argvopt = argv;
 
-    while ((opt = getopt(argc, argvopt, short_options)) != EOF) {
+    while ((opt = getopt_long(argc, argvopt, short_options, long_options, &option_index)) != EOF) {
         switch (opt) {
-            /* portmask */
             case 'p':
                 tcpgen_enabled_port_mask = tcpgen_parse_portmask(optarg);
                 if (tcpgen_enabled_port_mask == 0) {
@@ -631,6 +655,47 @@ tcpgen_parse_args(int argc, char **argv) {
 
             case 't':
                 tx_tsc_period = strtoull(optarg, NULL, 10);
+                break;
+
+            case CMD_LINE_OPT_SRC_MAC_NUM:
+                scanned = sscanf(optarg, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &src_mac[0], &src_mac[1], &src_mac[2],
+                                 &src_mac[3], &src_mac[4], &src_mac[5]);
+                if (scanned != ETHER_ADDR_LEN) {
+                    fprintf(stderr, "failed to parse src-mac\n");
+                    tcpgen_usage(prgname);
+                    return -1;
+                }
+                break;
+
+            case CMD_LINE_OPT_DST_MAC_NUM:
+                scanned = sscanf(optarg, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &dst_mac[0], &dst_mac[1], &dst_mac[2],
+                                 &dst_mac[3], &dst_mac[4], &dst_mac[5]);
+                if (scanned != ETHER_ADDR_LEN) {
+                    fprintf(stderr, "failed to parse dst-mac\n");
+                    tcpgen_usage(prgname);
+                    return -1;
+                }
+                break;
+
+            case CMD_LINE_OPT_SRC_IP_MASK_NUM:
+                // little-endian int casting
+                scanned = sscanf(optarg, "%hhd.%hhd.%hhd.%hhd", &src_ip_mask[3], &src_ip_mask[2], &src_ip_mask[1],
+                                 &src_ip_mask[0]);
+                if(scanned != IP_ADDR_LEN) {
+                    fprintf(stderr, "failed to parse src IP mask\n");
+                    tcpgen_usage(prgname);
+                    return -1;
+                }
+                break;
+
+            case CMD_LINE_OPT_DST_IP_NUM:
+                // little-endian int casting
+                scanned = sscanf(optarg, "%hhd.%hhd.%hhd.%hhd", &dst_ip[3], &dst_ip[2], &dst_ip[1], &dst_ip[0]);
+                if(scanned != IP_ADDR_LEN) {
+                    fprintf(stderr, "failed to parse dest IP\n");
+                    tcpgen_usage(prgname);
+                    return -1;
+                }
                 break;
 
             default:
