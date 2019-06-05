@@ -107,12 +107,7 @@ struct tcpgen_port_stats {
 
 struct tcpgen_port_stats port_stats[RTE_MAX_ETHPORTS];
 
-#define MAX_TIMER_PERIOD 86400 /* 1 day max */
-/* A tsc-based timer responsible for triggering statistics printout */
-static uint64_t timer_period = 10; /* default period is 10 seconds */
-
 static uint64_t tx_tsc_period = 1000000000;
-//static uint64_t tx_tsc_period = 0;
 
 #define SYN_MBUF_DATALEN ( \
     sizeof(struct ether_hdr) + \
@@ -749,9 +744,6 @@ main(int argc, char **argv) {
     ret = tcpgen_parse_args(argc, argv);
     if (ret < 0)
         rte_exit(EXIT_FAILURE, "Invalid TCPGEN arguments\n");
-
-    /* convert to number of cycles */
-    timer_period *= rte_get_timer_hz();
 
     nb_ports = rte_eth_dev_count_avail();
     if (nb_ports == 0)
