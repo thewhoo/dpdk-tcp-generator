@@ -1,7 +1,8 @@
-/**
- * tcpgen - A simple and stupid TCP DNS traffic generator and analyzer
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright(c) 2019 Brno University of Technology
+ *
+ * tcpgen - a simple DPDK TCP DNS traffic generator
  * Author: Matej Postolka <xposto02@stud.fit.vutbr.cz>
- * Based on l2fwd by Intel Corporation
  */
 
 #include <stdio.h>
