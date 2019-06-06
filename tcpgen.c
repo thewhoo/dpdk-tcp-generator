@@ -613,6 +613,16 @@ static const struct option long_options[] = {
         {NULL, 0,                                     0, 0}
 };
 
+#define ARG_SRC_MAC (1 << 0)
+#define ARG_DST_MAC (1 << 1)
+#define ARG_SRC_IP_MASK (1 << 2)
+#define ARG_DST_IP (1 << 3)
+#define ARG_PORT_MASK (1 << 4)
+#define ARG_QNAME_FILE (1 << 5)
+#define ARG_TSC_PERIOD (1 << 6)
+
+#define ARG_REQUIRED (ARG_SRC_MAC | ARG_DST_MAC | ARG_SRC_IP_MASK | ARG_DST_IP | ARG_PORT_MASK | ARG_QNAME_FILE)
+
 static int
 tcpgen_parse_args(int argc, char **argv) {
     int opt, ret;
@@ -620,6 +630,8 @@ tcpgen_parse_args(int argc, char **argv) {
     int scanned;
     char **argvopt;
     char *prgname = argv[0];
+
+    uint32_t supplied_args = 0;
 
     argvopt = argv;
 
@@ -632,14 +644,17 @@ tcpgen_parse_args(int argc, char **argv) {
                     tcpgen_usage(prgname);
                     return -1;
                 }
+                supplied_args |= ARG_PORT_MASK;
                 break;
 
             case 't':
                 tx_tsc_period = strtoull(optarg, NULL, 10);
+                supplied_args |= ARG_TSC_PERIOD;
                 break;
 
             case 'f':
                 qname_table_alloc(optarg, &qname_table);
+                supplied_args |= ARG_QNAME_FILE;
                 break;
 
             case CMD_LINE_OPT_SRC_MAC_NUM:
@@ -650,6 +665,7 @@ tcpgen_parse_args(int argc, char **argv) {
                     tcpgen_usage(prgname);
                     return -1;
                 }
+                supplied_args |= ARG_SRC_MAC;
                 break;
 
             case CMD_LINE_OPT_DST_MAC_NUM:
@@ -660,6 +676,7 @@ tcpgen_parse_args(int argc, char **argv) {
                     tcpgen_usage(prgname);
                     return -1;
                 }
+                supplied_args |= ARG_DST_MAC;
                 break;
 
             case CMD_LINE_OPT_SRC_IP_MASK_NUM:
@@ -671,6 +688,7 @@ tcpgen_parse_args(int argc, char **argv) {
                     tcpgen_usage(prgname);
                     return -1;
                 }
+                supplied_args |= ARG_SRC_IP_MASK;
                 break;
 
             case CMD_LINE_OPT_DST_IP_NUM:
@@ -681,12 +699,20 @@ tcpgen_parse_args(int argc, char **argv) {
                     tcpgen_usage(prgname);
                     return -1;
                 }
+                supplied_args |= ARG_DST_IP;
                 break;
 
             default:
                 tcpgen_usage(prgname);
                 return -1;
         }
+    }
+
+    if ((supplied_args & ARG_REQUIRED) != ARG_REQUIRED) {
+        // Missing required arguments
+        fprintf(stderr, "missing required arguments\n");
+        tcpgen_usage(prgname);
+        return -1;
     }
 
     if (optind >= 0)
