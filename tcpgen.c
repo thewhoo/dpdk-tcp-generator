@@ -318,7 +318,7 @@ mbuf_clone(struct rte_mbuf *m) {
 static void
 response_classify(struct rte_mbuf *m, unsigned portid) {
     struct dns_hdr *dns_hdr = mbuf_dns_header_ptr(m);
-    uint8_t rcode = rte_be_to_cpu_16(dns_hdr->flags) & 0x4;
+    uint8_t rcode = rte_be_to_cpu_16(dns_hdr->flags) & 0xf;
     port_stats[portid].rx_rcode[rcode]++;
 }
 
