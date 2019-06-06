@@ -37,9 +37,10 @@ First, check which network interfaces are available by running `dpdk-devbind --s
 ### Usage
 
 ```
-./tcpgen [EAL options] -- -p PORTMASK --src-mac SRC_MAC --dst-mac DST_MAC --src-ip-mask SRC_IP_MASK --dst-ip DST_IP
+./tcpgen [EAL options] -- -p PORTMASK [-t TCP GAP] -f QNAME file --src-mac SRC_MAC --dst-mac DST_MAC --src-ip-mask SRC_IP_MASK --dst-ip DST_IP
   -p PORTMASK: Hexadecimal bitmask of ports to generate traffic on
   -t TCP GAP: TSC delay before opening a new TCP connection
+  -f QNAME file: File containing a list of QNAMEs used for generating queries
   --src-mac: Source MAC address of queries
   --dst-mac: Destination MAC address of queries
   --src-ip-mask: Mask for source IP of queries
@@ -57,13 +58,22 @@ First, check which network interfaces are available by running `dpdk-devbind --s
 
 ### Example
 
-The generator is currently hard-coded to send a single A query for `a.test` (an option for custom and randomized QNAMEs will be added later), so running
+The generator uses a user-supplied list of QNAMEs in the queries it generates. This list is supplied in a file with the `-f` argument and should contain one FQDN per line, including the dot at the end (same format as in zone files):
 
-```shell
-./tcpgen -c 1 -- -p 1 -t 10000 --src-mac de:ad:be:ef:ca:fe --dst-mac 90:e2:ba:ee:ee:ee --src-ip-mask 10.10.64.0 --dst-ip 10.99.0.1
+```
+a.test.
+b.test.
+c.test.
+x2443.asdf.invalid.
+a.b.c.d.
 ```
 
-will cause the application to begin generating A queries for `a.test` from IP addresses in the `10.10.64.0` - `10.10.127.255` range with random source ports. The MAC address of the server interface should be `90:e2:ba:ee:ee:ee` and the configured IP address should be `10.99.0.1`.
+Running the generator with the following arguments
+```shell
+./tcpgen -c 1 -- -p 1 -t 10000 --src-mac de:ad:be:ef:ca:fe --dst-mac 90:e2:ba:ee:ee:ee --src-ip-mask 10.10.64.0 --dst-ip 10.99.0.1 -f qname_file
+```
+
+will cause the application to begin generating A queries for randomly selected hostnames from the QNAME file from IP addresses in the `10.10.64.0` - `10.10.127.255` range with random source ports. The MAC address of the server interface should be `90:e2:ba:ee:ee:ee` and the configured IP address should be `10.99.0.1`.
 
 The routing table of the server should contain a route for the randomized query subnet (you can use any destination IP, the generator doesn't care):
 
@@ -81,7 +91,7 @@ This will result in response traffic being correctly sent out of the same interf
 
 It is recommended to first test everything with the default TCP gap (very low frequency of new connections) and `tcpdump` to see if traffic is getting sent out of the correct interface and if the server is responding.
 
-An example zone file that causes the server to return a NOERROR response for `a.test`:
+An example zone file that causes the server to return a NOERROR response for `a.test`, NXDOMAIN for `b.test` and `c.test` and REFUSED for other QNAMES:
 
 ```shell
 test.           86400    IN      SOA     ns.test.    test.test.  2019021300 1800 900 604800 86400
