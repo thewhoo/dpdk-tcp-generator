@@ -30,7 +30,7 @@
 #define DNS_RCODE_NOTIMP    4
 #define DNS_RCODE_REFUSED   5
 
-#define DNS_RCODE_MAX_TYPES 1 << 8
+#define DNS_RCODE_MAX_TYPES (1 << 8)
 
 /**
  * DNS query classes
