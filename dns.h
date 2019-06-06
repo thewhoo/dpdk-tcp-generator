@@ -48,8 +48,7 @@ struct dns_hdr {
     uint16_t additional_cnt;
 } __attribute__((__packed__));
 
-struct dns_query_static {
-    uint8_t qname[8];
+struct dns_query_flags {
     uint16_t qtype;
     uint16_t qclass;
 } __attribute__((__packed__));

@@ -5,7 +5,7 @@
 APP = tcpgen
 
 # all source are stored in SRCS-y
-SRCS-y := tcpgen.c
+SRCS-y := tcpgen.c qname_table.c
 
 # Build using pkg-config variables if possible
 $(shell pkg-config --exists libdpdk)

@@ -43,6 +43,7 @@
 #include <rte_mbuf.h>
 
 #include "dns.h"
+#include "qname_table.h"
 
 static volatile bool force_quit;
 
@@ -108,6 +109,9 @@ struct tcpgen_port_stats port_stats[RTE_MAX_ETHPORTS];
 
 static uint64_t tx_tsc_period = 1000000000;
 
+// QNAMEs to send queries for
+static struct qname_table qname_table;
+
 #define SYN_MBUF_DATALEN ( \
     sizeof(struct ether_hdr) + \
     sizeof(struct ipv4_hdr) + \
@@ -127,7 +131,7 @@ static uint8_t dst_ip[IP_ADDR_LEN];
 #define mbuf_ip4_ptr(m) (rte_pktmbuf_mtod_offset((m), struct ipv4_hdr *, sizeof(struct ether_hdr)))
 #define mbuf_tcp_ptr(m) (rte_pktmbuf_mtod_offset((m), struct tcp_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr)))
 #define mbuf_dns_header_ptr(m) (rte_pktmbuf_mtod_offset((m), struct dns_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) + sizeof(struct tcp_hdr)))
-#define mbuf_dns_query_ptr(m) (rte_pktmbuf_mtod_offset((m), struct dns_query_static *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) + sizeof(struct tcp_hdr) + sizeof(struct dns_hdr)))
+#define mbuf_dns_qname_ptr(m) (rte_pktmbuf_mtod_offset((m), uint8_t *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) + sizeof(struct tcp_hdr) + sizeof(struct dns_hdr)))
 
 // TCP connection generator
 static void
@@ -250,26 +254,30 @@ send_ack(struct rte_mbuf *m, unsigned portid, bool fin) {
 }
 
 #define DNS_PACKET_MIN_LEN (sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) + sizeof(struct tcp_hdr) + sizeof(struct dns_hdr))
-#define DNS_STATIC_QUERY_LEN (DNS_PACKET_MIN_LEN + sizeof(struct dns_query_static))
 
 static void
 generate_query(struct rte_mbuf *m, unsigned portid) {
+    // Select random QNAME from table
+    uint32_t qname_index = rte_rand() % qname_table.records;
+    uint8_t qname_bytes = qname_table.data[qname_index].qname_bytes;
+
     // Pointers to headers
     struct ipv4_hdr *ip = mbuf_ip4_ptr(m);
     struct tcp_hdr *tcp = mbuf_tcp_ptr(m);
     struct dns_hdr *dns_hdr = mbuf_dns_header_ptr(m);
-    struct dns_query_static *dns_query = mbuf_dns_query_ptr(m);
+    uint8_t *qname_ptr = mbuf_dns_qname_ptr(m);
+    struct dns_query_flags *dns_query_flags = (struct dns_query_flags *) (qname_ptr + qname_bytes);
 
-    m->pkt_len = m->data_len = DNS_STATIC_QUERY_LEN;
+    m->pkt_len = m->data_len = DNS_PACKET_MIN_LEN + qname_bytes + sizeof(struct dns_query_flags);
 
-    ip->total_length = rte_cpu_to_be_16(DNS_STATIC_QUERY_LEN - sizeof(struct ether_hdr));
+    ip->total_length = rte_cpu_to_be_16(m->data_len - sizeof(struct ether_hdr));
     ip->hdr_checksum = 0;
 
     tcp->tcp_flags = 0x18; // ACK + PSH
     tcp->cksum = 0;
 
     dns_hdr->len = rte_cpu_to_be_16(
-            sizeof(struct dns_hdr) + sizeof(struct dns_query_static) - 2); // Length bytes not counted
+            sizeof(struct dns_hdr) + qname_bytes + sizeof(struct dns_query_flags) - 2); // Length bytes not counted
     dns_hdr->tx_id = rte_rand();
     dns_hdr->flags = 0;
     dns_hdr->q_cnt = rte_cpu_to_be_16(1);
@@ -277,17 +285,10 @@ generate_query(struct rte_mbuf *m, unsigned portid) {
     dns_hdr->auth_cnt = 0;
     dns_hdr->additional_cnt = 0;
 
-    dns_query->qname[0] = 1;
-    dns_query->qname[1] = 'a';
-    dns_query->qname[2] = 4;
-    dns_query->qname[3] = 't';
-    dns_query->qname[4] = 'e';
-    dns_query->qname[5] = 's';
-    dns_query->qname[6] = 't';
-    dns_query->qname[7] = 0;
+    memcpy(qname_ptr, qname_table.data[qname_index].qname, qname_bytes);
 
-    dns_query->qtype = rte_cpu_to_be_16(DNS_QTYPE_A);
-    dns_query->qclass = rte_cpu_to_be_16(DNS_QCLASS_IN);
+    dns_query_flags->qtype = rte_cpu_to_be_16(DNS_QTYPE_A);
+    dns_query_flags->qclass = rte_cpu_to_be_16(DNS_QCLASS_IN);
 
     // Update cksums
     ip->hdr_checksum = rte_ipv4_cksum(ip);
@@ -298,7 +299,7 @@ generate_query(struct rte_mbuf *m, unsigned portid) {
 
     buffer = tx_buffer[portid];
     rte_eth_tx_buffer(portid, 0, buffer, m);
-    port_stats[portid].tx_bytes += DNS_STATIC_QUERY_LEN;
+    port_stats[portid].tx_bytes += m->data_len;
     port_stats[portid].tx_packets++;
     port_stats[portid].tx_queries++;
 }
@@ -370,7 +371,7 @@ handle_incoming(struct rte_mbuf *m, unsigned portid) {
         send_ack(m, portid, false);
     }
         // Handle DNS query response
-    else if (m->pkt_len > DNS_STATIC_QUERY_LEN) {
+    else if (m->pkt_len > DNS_PACKET_MIN_LEN) {
         port_stats[portid].rx_responses++;
         rte_mbuf_refcnt_update(m, 1); // Keep mbuf for RCODE classification
         send_ack(m, portid, true);
@@ -559,9 +560,10 @@ check_all_ports_link_status(uint32_t port_mask) {
 
 static void
 tcpgen_usage(const char *prgname) {
-    printf("%s [EAL options] -- -p PORTMASK --src-mac SRC_MAC --dst-mac DST_MAC --src-ip-mask SRC_IP_MASK --dst-ip DST_IP\n"
+    printf("%s [EAL options] -- -p PORTMASK [-t TCP GAP] -f QNAME file --src-mac SRC_MAC --dst-mac DST_MAC --src-ip-mask SRC_IP_MASK --dst-ip DST_IP\n"
            "  -p PORTMASK: Hexadecimal bitmask of ports to generate traffic on\n"
            "  -t TCP GAP: TSC delay before opening a new TCP connection\n"
+           "  -f QNAME file: File containing a list of QNAMEs used for generating queries\n"
            "  --src-mac: Source MAC address of queries\n"
            "  --dst-mac: Destination MAC address of queries\n"
            "  --src-ip-mask: Mask for source IP of queries\n"
@@ -587,6 +589,7 @@ tcpgen_parse_portmask(const char *portmask) {
 static const char short_options[] =
         "p:"  // portmask
         "t:"  // tcp gap
+        "f:"  // QNAME file
 ;
 
 #define CMD_LINE_OPT_SRC_MAC "src-mac"
@@ -633,6 +636,10 @@ tcpgen_parse_args(int argc, char **argv) {
 
             case 't':
                 tx_tsc_period = strtoull(optarg, NULL, 10);
+                break;
+
+            case 'f':
+                qname_table_alloc(optarg, &qname_table);
                 break;
 
             case CMD_LINE_OPT_SRC_MAC_NUM:
@@ -721,6 +728,9 @@ main(int argc, char **argv) {
     force_quit = false;
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
+
+    // clear QNAME table
+    memset(&qname_table, 0, sizeof(struct qname_table));
 
     // parse application arguments (after the EAL ones)
     ret = tcpgen_parse_args(argc, argv);
@@ -886,6 +896,8 @@ main(int argc, char **argv) {
         rte_eth_dev_close(portid);
         printf(" Done\n");
     }
+
+    qname_table_free(&qname_table);
 
     printf("Bye...\n");
 
