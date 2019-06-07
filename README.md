@@ -43,7 +43,7 @@ First, check which network interfaces are available by running `dpdk-devbind --s
   -f QNAME file: File containing a list of QNAMEs used for generating queries
   --src-mac: Source MAC address of queries
   --dst-mac: Destination MAC address of queries
-  --src-ip-mask: Mask for source IP of queries
+  --src-subnet: Source subnet of queries (for example 10.10.0.0/16)
   --dst-ip: Destinatio IP of queries
 ```
 
@@ -53,7 +53,9 @@ First, check which network interfaces are available by running `dpdk-devbind --s
 * The tcp gap is the CPU clock cycle interval between opening new TCP connections (the default is 10 000 000 000 which means ~1 new connection every 3 seconds on a 3.3 GHz CPU). A value of 0 will cause new connections to be opened with the maximum possible frequency.
 * Feel free to choose any source MAC you want, but you will manually have to add it to the ARP table of the server subject to testing.
 * The destination MAC should be the MAC of the NIC on the server subject to testing
-* The source IP mask specifies the upper 18 bits of source IP addresses (the lower 14 bits are randomized with each query). A mask of `10.10.64.0` will result in queries arriving from a range of IP addresses between `10.10.64.0` and `10.10.127.255`
+* The source subnet specifies the subnet of source IP addresses of queries.
+A subnet of `10.10.64.0/18` will result in queries arriving from a range of IP addresses between `10.10.64.0` and `10.10.127.255`.
+Queries will not be sent from network and broadcast addresses.
 * The destination IP should be the IP address of the interface on the server (in a different subnet than the source IP range)
 
 ### Example
@@ -70,7 +72,7 @@ a.b.c.d.
 
 Running the generator with the following arguments
 ```shell
-./tcpgen -c 1 -- -p 1 -t 10000 --src-mac de:ad:be:ef:ca:fe --dst-mac 90:e2:ba:ee:ee:ee --src-ip-mask 10.10.64.0 --dst-ip 10.99.0.1 -f qname_file
+./tcpgen -c 1 -- -p 1 -t 10000 --src-mac de:ad:be:ef:ca:fe --dst-mac 90:e2:ba:ee:ee:ee --src-subnet 10.10.64.0/18 --dst-ip 10.99.0.1 -f qname_file
 ```
 
 will cause the application to begin generating A queries for randomly selected hostnames from the QNAME file from IP addresses in the `10.10.64.0` - `10.10.127.255` range with random source ports. The MAC address of the server interface should be `90:e2:ba:ee:ee:ee` and the configured IP address should be `10.99.0.1`.
