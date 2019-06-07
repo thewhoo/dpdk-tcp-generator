@@ -122,8 +122,9 @@ static uint8_t src_mac[ETHER_ADDR_LEN];
 static uint8_t dst_mac[ETHER_ADDR_LEN];
 
 #define IP_ADDR_LEN 4
-static uint8_t src_ip_mask[IP_ADDR_LEN];
+static uint8_t src_ip_net[IP_ADDR_LEN];
 static uint8_t dst_ip[IP_ADDR_LEN];
+static uint32_t src_ip_client_mask;
 
 #define DNS_PORT 53
 
@@ -136,8 +137,14 @@ static uint8_t dst_ip[IP_ADDR_LEN];
 // TCP connection generator
 static void
 tcp_open(unsigned portid) {
+
     uint16_t src_port = rte_rand();
-    uint16_t src_ip_rand_octets = rte_rand() & ((1 << 14) - 1); // 14 random bits in IP
+    uint16_t src_ip_rand_octets;
+
+    do {
+        src_ip_rand_octets = rte_rand() & src_ip_client_mask;
+    } while (unlikely(src_ip_rand_octets == 0 || src_ip_rand_octets == src_ip_client_mask)); // No net and broadcast addrs
+
 
     struct rte_mbuf *syn_mbuf = rte_pktmbuf_alloc(tcpgen_pktmbuf_pool);
     if (syn_mbuf == NULL) {
@@ -163,7 +170,7 @@ tcp_open(unsigned portid) {
     ip->time_to_live = 64;
     ip->next_proto_id = IPPROTO_TCP;
     ip->hdr_checksum = 0;
-    ip->src_addr = rte_cpu_to_be_32(*((uint32_t *) src_ip_mask) | src_ip_rand_octets);
+    ip->src_addr = rte_cpu_to_be_32(*((uint32_t *) src_ip_net) | src_ip_rand_octets);
     ip->dst_addr = rte_cpu_to_be_32(*((uint32_t *) dst_ip));
 
     // Process IP checksum
@@ -560,14 +567,14 @@ check_all_ports_link_status(uint32_t port_mask) {
 
 static void
 tcpgen_usage(const char *prgname) {
-    printf("%s [EAL options] -- -p PORTMASK [-t TCP GAP] -f QNAME file --src-mac SRC_MAC --dst-mac DST_MAC --src-ip-mask SRC_IP_MASK --dst-ip DST_IP\n"
+    printf("%s [EAL options] -- -p PORTMASK [-t TCP GAP] -f QNAME file --src-mac SRC_MAC --dst-mac DST_MAC --src-subnet SRC_SUBNET --dst-ip DST_IP\n"
            "  -p PORTMASK: Hexadecimal bitmask of ports to generate traffic on\n"
            "  -t TCP GAP: TSC delay before opening a new TCP connection\n"
            "  -f QNAME file: File containing a list of QNAMEs used for generating queries\n"
            "  --src-mac: Source MAC address of queries\n"
            "  --dst-mac: Destination MAC address of queries\n"
-           "  --src-ip-mask: Mask for source IP of queries\n"
-           "  --dst-ip: Destinatio IP of queries\n",
+           "  --src-subnet: Source subnet of queries (for example 10.10.0.0/16)\n"
+           "  --dst-ip: Destination IP of queries\n",
            prgname);
 }
 
@@ -594,34 +601,34 @@ static const char short_options[] =
 
 #define CMD_LINE_OPT_SRC_MAC "src-mac"
 #define CMD_LINE_OPT_DST_MAC "dst-mac"
-#define CMD_LINE_OPT_SRC_IP_MASK "src-ip-mask"
+#define CMD_LINE_OPT_SRC_SUBNET "src-subnet"
 #define CMD_LINE_OPT_DST_IP "dst-ip"
 
 enum {
     CMD_LINE_OPT_MIN_NUM = 256,
     CMD_LINE_OPT_SRC_MAC_NUM,
     CMD_LINE_OPT_DST_MAC_NUM,
-    CMD_LINE_OPT_SRC_IP_MASK_NUM,
+    CMD_LINE_OPT_SRC_SUBNET_NUM,
     CMD_LINE_OPT_DST_IP_NUM,
 };
 
 static const struct option long_options[] = {
         {CMD_LINE_OPT_SRC_MAC,     required_argument, 0, CMD_LINE_OPT_SRC_MAC_NUM},
         {CMD_LINE_OPT_DST_MAC,     required_argument, 0, CMD_LINE_OPT_DST_MAC_NUM},
-        {CMD_LINE_OPT_SRC_IP_MASK, required_argument, 0, CMD_LINE_OPT_SRC_IP_MASK_NUM},
+        {CMD_LINE_OPT_SRC_SUBNET, required_argument, 0, CMD_LINE_OPT_SRC_SUBNET_NUM},
         {CMD_LINE_OPT_DST_IP,      required_argument, 0, CMD_LINE_OPT_DST_IP_NUM},
         {NULL, 0,                                     0, 0}
 };
 
 #define ARG_SRC_MAC (1 << 0)
 #define ARG_DST_MAC (1 << 1)
-#define ARG_SRC_IP_MASK (1 << 2)
+#define ARG_SRC_SUBNET (1 << 2)
 #define ARG_DST_IP (1 << 3)
 #define ARG_PORT_MASK (1 << 4)
 #define ARG_QNAME_FILE (1 << 5)
 #define ARG_TSC_PERIOD (1 << 6)
 
-#define ARG_REQUIRED (ARG_SRC_MAC | ARG_DST_MAC | ARG_SRC_IP_MASK | ARG_DST_IP | ARG_PORT_MASK | ARG_QNAME_FILE)
+#define ARG_REQUIRED (ARG_SRC_MAC | ARG_DST_MAC | ARG_SRC_SUBNET | ARG_DST_IP | ARG_PORT_MASK | ARG_QNAME_FILE)
 
 static int
 tcpgen_parse_args(int argc, char **argv) {
@@ -632,6 +639,7 @@ tcpgen_parse_args(int argc, char **argv) {
     char *prgname = argv[0];
 
     uint32_t supplied_args = 0;
+    uint8_t src_ip_cidr;
 
     argvopt = argv;
 
@@ -679,16 +687,18 @@ tcpgen_parse_args(int argc, char **argv) {
                 supplied_args |= ARG_DST_MAC;
                 break;
 
-            case CMD_LINE_OPT_SRC_IP_MASK_NUM:
+            case CMD_LINE_OPT_SRC_SUBNET_NUM:
                 // little-endian int casting
-                scanned = sscanf(optarg, "%hhd.%hhd.%hhd.%hhd", &src_ip_mask[3], &src_ip_mask[2], &src_ip_mask[1],
-                                 &src_ip_mask[0]);
-                if (scanned != IP_ADDR_LEN) {
-                    fprintf(stderr, "failed to parse src IP mask\n");
+                scanned = sscanf(optarg, "%hhd.%hhd.%hhd.%hhd/%hhd", &src_ip_net[3], &src_ip_net[2], &src_ip_net[1],
+                                 &src_ip_net[0], &src_ip_cidr);
+                if (scanned != IP_ADDR_LEN + 1) {
+                    fprintf(stderr, "failed to parse src subnet\n");
                     tcpgen_usage(prgname);
                     return -1;
                 }
-                supplied_args |= ARG_SRC_IP_MASK;
+
+                src_ip_client_mask = (1 << (32 - src_ip_cidr)) - 1;
+                supplied_args |= ARG_SRC_SUBNET;
                 break;
 
             case CMD_LINE_OPT_DST_IP_NUM:
