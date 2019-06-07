@@ -45,6 +45,10 @@
 #include "dns.h"
 #include "qname_table.h"
 
+#ifndef unlikely
+#define unlikely(x) (x)
+#endif
+
 static volatile bool force_quit;
 
 #define RTE_LOGTYPE_TCPGEN RTE_LOGTYPE_USER1
