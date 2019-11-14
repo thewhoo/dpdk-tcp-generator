@@ -19,7 +19,7 @@ Before running the application, it is necessary to perform the following steps:
 
 1. Allocate hugepages
 2. Bind the desired network interface to a DPDK-compatible driver
-3. Manually set up ARP entries and routes on the server subject to testing
+3. Manually set up ARP entries, NDP entries and routes on the server subject to testing
 
 ### Allocation of hugepages
 
@@ -37,71 +37,55 @@ First, check which network interfaces are available by running `dpdk-devbind --s
 ### Usage
 
 ```
-./tcpgen [EAL options] -- -p PORTMASK [-t TCP GAP] -f QNAME file --src-mac SRC_MAC --dst-mac DST_MAC --src-ip-mask SRC_IP_MASK --dst-ip DST_IP
+tcpgen [EAL options] -- -p PORTMASK [-t TCP_GAP] -c CONFIG {--pcap PCAP | --qnames QNAMES}
   -p PORTMASK: Hexadecimal bitmask of ports to generate traffic on
-  -t TCP GAP: TSC delay before opening a new TCP connection
-  -f QNAME file: File containing a list of QNAMEs used for generating queries
-  --src-mac: Source MAC address of queries
-  --dst-mac: Destination MAC address of queries
-  --src-subnet: Source subnet of queries (for example 10.10.0.0/16)
-  --dst-ip: Destinatio IP of queries
+  -t TCP_GAP: TSC delay before opening a new TCP connection
+  -c CONFIG: Generator configuration file (see documentation)
+  --pcap PCAP: File containing reference packets for generating queries
+  --qnames QNAMES: File containing QNAMEs and record types used to derive queries (see documentation)
 ```
 
-* The only EAL option that needs to be supplied is the core mask (supplied by the `-c` argument. It is currently recommended to use a single core as it can generate a sufficient amount of traffic and multi-core scenarios have not been sufficiently tested).
+* The only EAL option that needs to be supplied is the core mask (supplied by the `-c` argument. Use `-c 1` to use a single thread. Multithreading is currently broken and behavior with a different core mask is undefined).
 
 * Use the portmask to select ports on which to generate traffic (bit mask that selects interfaces bound to a DPDK-compatible driver in the order displayed in `dpdk-devbind --status`)
 * The tcp gap is the CPU clock cycle interval between opening new TCP connections (the default is 10 000 000 000 which means ~1 new connection every 3 seconds on a 3.3 GHz CPU). A value of 0 will cause new connections to be opened with the maximum possible frequency.
-* Feel free to choose any source MAC you want, but you will manually have to add it to the ARP table of the server subject to testing.
-* The destination MAC should be the MAC of the NIC on the server subject to testing
-* The source subnet specifies the subnet of source IP addresses of queries.
-A subnet of `10.10.64.0/18` will result in queries arriving from a range of IP addresses between `10.10.64.0` and `10.10.127.255`.
-Queries will not be sent from network and broadcast addresses.
-* The destination IP should be the IP address of the interface on the server (in a different subnet than the source IP range)
+* All other configuration is specified in the configuration file. See `example.conf`.
 
-### Example
+### Notes
 
-The generator uses a user-supplied list of QNAMEs in the queries it generates. This list is supplied in a file with the `-f` argument and should contain one FQDN per line, including the dot at the end (same format as in zone files):
-
+Suppose we have the following configuration:
 ```
-a.test.
-b.test.
-c.test.
-x2443.asdf.invalid.
-a.b.c.d.
-```
+source-mac de:ad:be:ef:ca:fe
+destination-mac 90:e2:ba:00:00:01
 
-Running the generator with the following arguments
-```shell
-./tcpgen -c 1 -- -p 1 -t 10000 --src-mac de:ad:be:ef:ca:fe --dst-mac 90:e2:ba:ee:ee:ee --src-subnet 10.10.64.0/18 --dst-ip 10.99.0.1 -f qname_file
-```
+ipv6-source-network fcaa:dead:beef:cafe::
+ipv6-source-netmask ffff:ffff:ffff:ffff:ffff:ffff::
+ipv6-destination-ip fcbb:1::1
 
-will cause the application to begin generating A queries for randomly selected hostnames from the QNAME file from IP addresses in the `10.10.64.0` - `10.10.127.255` range with random source ports. The MAC address of the server interface should be `90:e2:ba:ee:ee:ee` and the configured IP address should be `10.99.0.1`.
+ipv4-source-network 10.10.64.0
+ipv4-source-netmask 255.255.192.0
+ipv4-destination-ip 10.99.0.1
+
+tcp-destination-port 53
+```
 
 The routing table of the server should contain a route for the randomized query subnet (you can use any destination IP, the generator doesn't care):
 
 ```shell
 ip route add 10.10.64.0/18 via 10.99.0.254
+ip -6 route add fcaa:dead:beef:cafe::/96 via fcbb:1::2
 ```
 
-However, the ARP table of the server must then contain a corresponding entry, matching `de:ad:be:ef:ca:fe` with the IP address added to the routing table:
+However, the ARP and NDP tables of the server must then contain a corresponding entry, matching `de:ad:be:ef:ca:fe` with the IP address added to the routing table:
 
 ```shell
 arp -s 10.99.0.254 de:ad:be:ef:ca:fe
+ip -6 neigh add fcbb:1::2 lladdr de:ad:be:ef:ca:fe dev enp1s0f0
 ```
 
 This will result in response traffic being correctly sent out of the same interface with the destination MAC of `de:ad:be:ef:ca:fe`. Please note that it is important that the source IP address range of queries does not overlap with the subnet of the server NIC to prevent the server from performing ARP lookups for the random IP addresses of the queries.
 
 It is recommended to first test everything with the default TCP gap (very low frequency of new connections) and `tcpdump` to see if traffic is getting sent out of the correct interface and if the server is responding.
-
-An example zone file that causes the server to return a NOERROR response for `a.test`, NXDOMAIN for `b.test` and `c.test` and REFUSED for other QNAMES:
-
-```shell
-test.           86400    IN      SOA     ns.test.    test.test.  2019021300 1800 900 604800 86400
-test.           86400    IN      NS      ns.test.
-ns.test.        86400    IN      A       127.0.0.1
-ns.test.        86400    IN      AAAA    ::1
-a.test.         86400    IN      A       127.0.0.1
-```
 
 ## Troubleshooting
 `tcpdump` or write me an email: Matej Postolka <xposto02@stud.fit.vutbr.cz> or <matej@postolka.net>
