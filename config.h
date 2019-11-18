@@ -19,6 +19,6 @@
 #define CONF_OPT_NUM_IP6_DST_IP (1 << 7)
 #define CONF_OPT_NUM_TCP_DST_PORT (1 << 8)
 
-void config_file_parse(const char *filename, struct user_config *config);
+int config_file_parse(const char *filename, struct user_config *config);
 
 #endif //DPDK_TCP_GENERATOR_CONFIG_H

@@ -47,7 +47,7 @@ enum {
     CONF_AUTOMATON_STATE_TCP_DST_PORT,
 };
 
-#define AUTOMATON_EXIT_FAIL(param) do {rte_exit(EXIT_FAILURE, "config: failed to parse value of %s\n", (param));} while (0)
+#define AUTOMATON_EXIT_FAIL(param) do {RTE_LOG(ERR, TCPGEN, "config_file_parse: failed to parse value of %s\n", (param)); return -1;} while (0)
 
 static int parse_mac_addr_str(const char *mac_addr_str, uint8_t *dest);
 
@@ -90,10 +90,11 @@ static int parse_mac_addr_str(const char *mac_addr_str, uint8_t *dest) {
         return -1;
 }
 
-void config_file_parse(const char *filename, struct user_config *config) {
+int config_file_parse(const char *filename, struct user_config *config) {
     FILE *fp = fopen(filename, "r");
     if(fp == NULL) {
-        rte_exit(EXIT_FAILURE, "config: failed to open configuration file\n");
+        RTE_LOG(ERR, TCPGEN, "config_file_parse: failed to open configuration file\n");
+        return -1;
     }
 
     char buf[1024];
@@ -104,8 +105,10 @@ void config_file_parse(const char *filename, struct user_config *config) {
 
     int ch;
     do {
-        if (buf_pos > 1023)
-            rte_exit(EXIT_FAILURE, "config: unable to parse configuration file\n");
+        if (buf_pos > 1023) {
+            RTE_LOG(ERR, TCPGEN, "config_file_parse: invalid data in configuration file\n");
+            return -1;
+        }
 
         ch = fgetc(fp);
 
@@ -138,7 +141,8 @@ void config_file_parse(const char *filename, struct user_config *config) {
             } else if (STR_EQUAL(buf, CONF_OPT_TCP_DST_PORT, buf_pos)) {
                 conf_automaton_state = CONF_AUTOMATON_STATE_TCP_DST_PORT;
             } else {
-                rte_exit(EXIT_FAILURE, "config: unknown configuration key: %s\n", buf);
+                RTE_LOG(ERR, TCPGEN, "config_file_parse: unkown configuration key: %s\n", buf);
+                return -1;
             }
 
             buf_pos = 0;
@@ -206,8 +210,8 @@ void config_file_parse(const char *filename, struct user_config *config) {
                     config->supplied_config_opts |= CONF_OPT_NUM_TCP_DST_PORT;
                     break;
                 default:
-                    rte_exit(EXIT_FAILURE, "conf: invalid conf automaton state\n");
-                    break;
+                    RTE_LOG(ERR, TCPGEN, "config_file_parse: invalid conf automaton state\n");
+                    return -1;
             }
 
             conf_automaton_state = CONF_AUTOMATON_STATE_KEYWORD;
@@ -221,10 +225,14 @@ void config_file_parse(const char *filename, struct user_config *config) {
     fclose(fp);
 
     if (conf_automaton_state != CONF_AUTOMATON_STATE_KEYWORD || buf_pos != 0) {
-        rte_exit(EXIT_FAILURE, "conf: malformed configuration file\n");
+        RTE_LOG(ERR, TCPGEN, "config_file_parse: malformed configuration file\n");
+        return -1;
     }
 
     if (!CONF_VALID(config->supplied_config_opts)) {
-        rte_exit(EXIT_FAILURE, "conf: invalid combination of configuration options (see documentation)\n");
+        RTE_LOG(ERR, TCPGEN, "config_file_parse: invalid combination of configuration options (see documentation)\n");
+        return -1;
     }
+
+    return 0;
 }

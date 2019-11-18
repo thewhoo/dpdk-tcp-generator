@@ -319,13 +319,14 @@ main(int argc, char **argv) {
     pcap_list_init(&app_config.pcap_list);
 
     // Read in configuration file
-    // FIXME no rte_exit in config parser
-    config_file_parse(app_config.user_config.config_file, &app_config.user_config);
+    if (config_file_parse(app_config.user_config.config_file, &app_config.user_config) != 0) {
+        rte_exit(EXIT_FAILURE, "Failed to parse configuration file\n");
+    }
 
     // Initialize QNAME table or PCAP linked-list based on supplied arguments
     if(app_config.user_config.supplied_args & ARG_PCAP_FILE) {
         if (pcap_parse(&app_config) == -1) {
-            rte_exit(EXIT_FAILURE, "critical failure in pcap_parse\n");
+            rte_exit(EXIT_FAILURE, "Critical error occured when parsing PCAP file\n");
         }
     }
     else {
