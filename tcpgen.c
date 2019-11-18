@@ -27,13 +27,13 @@
 #include <rte_ethdev.h>
 #include <rte_mbuf.h>
 
-#include "dns.h"
 #include "qname_table.h"
 #include "pcap.h"
 #include "common.h"
 #include "args.h"
 #include "conn.h"
 #include "config.h"
+#include "stats.h"
 
 #define RTE_TEST_RX_DESC_DEFAULT 1024
 #define RTE_TEST_TX_DESC_DEFAULT 1024
@@ -148,36 +148,7 @@ static void tcpgen_main_loop(struct app_config *app_config) {
 
     stop_tsc = rte_rdtsc();
     uint64_t runtime_tsc = stop_tsc - start_tsc;
-    uint64_t runtime_usec = runtime_tsc / (rte_get_tsc_hz() / 1000000);
-    uint64_t runtime_sec = runtime_tsc / rte_get_tsc_hz();
-    printf("Total runtime: %lu microseconds (%lu seconds)\n", runtime_usec, runtime_sec);
-    for (i = 0; i < qconf->n_port; i++) {
-        portid = qconf->port_list[i];
-        printf("Port %d stats:\n\tTX bytes: %lu\n\tTX packets: %lu\n\tTX queries: %lu\n\n\t",
-               portid,
-               app_config->port_stats[portid].tx_bytes,
-               app_config->port_stats[portid].tx_packets,
-               app_config->port_stats[portid].tx_queries);
-        printf("RX bytes: %lu\n\tRX packets: %lu\n\tRX responses: %lu\n\t\t",
-               app_config->port_stats[portid].rx_bytes,
-               app_config->port_stats[portid].rx_packets,
-               app_config->port_stats[portid].rx_responses);
-        printf("NOERROR: %lu\n\t\tFORMERR: %lu\n\t\tSERVFAIL: %lu\n\t\tNXDOMAIN: %lu\n\t\tNOTIMP: %lu\n\t\tREFUSED: %lu\n\n\t",
-               app_config->port_stats[portid].rx_rcode[DNS_RCODE_NOERROR],
-               app_config->port_stats[portid].rx_rcode[DNS_RCODE_FORMERR],
-               app_config->port_stats[portid].rx_rcode[DNS_RCODE_SERVFAIL],
-               app_config->port_stats[portid].rx_rcode[DNS_RCODE_NXDOMAIN],
-               app_config->port_stats[portid].rx_rcode[DNS_RCODE_NOTIMP],
-               app_config->port_stats[portid].rx_rcode[DNS_RCODE_REFUSED]);
-        printf("TX bitrate: %f Gbit/s\n\tTX QPS: %.2f\n\tTX FPS: %.2f\n\tRX bitrate: %f Gbit/s\n\tRX RPS: %.2f\n\tRX FPS: %.2f\n\tResponse rate: %.2f%%\n",
-               ((app_config->port_stats[portid].tx_bytes << 3) / (double) runtime_usec) / 1000,
-               (app_config->port_stats[portid].tx_queries / (double) runtime_usec) * 1000000,
-               (app_config->port_stats[portid].tx_packets / (double) runtime_usec) * 1000000,
-               ((app_config->port_stats[portid].rx_bytes << 3) / (double) runtime_usec) / 1000,
-               (app_config->port_stats[portid].rx_responses / (double) runtime_usec) * 1000000,
-               (app_config->port_stats[portid].rx_packets / (double) runtime_usec) * 1000000,
-               ((app_config->port_stats[portid].rx_responses / (double) app_config->port_stats[portid].tx_queries)) * 100);
-    }
+    print_all_stats(app_config, lcore_id, runtime_tsc);
 }
 
 static int tcpgen_launch_one_lcore(struct app_config *app_config) {

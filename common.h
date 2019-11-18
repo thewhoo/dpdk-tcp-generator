@@ -31,6 +31,7 @@
 #include "dns.h"
 #include "qname_table.h"
 #include "pcap.h"
+#include "stats.h"
 
 #define RTE_LOGTYPE_TCPGEN RTE_LOGTYPE_USER1
 
@@ -53,26 +54,6 @@
 struct lcore_queue_conf {
     unsigned n_port;
     unsigned port_list[MAX_RX_QUEUE_PER_LCORE];
-} __rte_cache_aligned;
-
-struct port_stats {
-    // Total TX packet count
-    uint64_t tx_packets;
-    // Total TX byte count
-    uint64_t tx_bytes;
-    // DNS query TX count
-    uint64_t tx_queries;
-    // TX dropped count
-    uint64_t tx_dropped;
-
-    // Total RX packet count
-    uint64_t rx_packets;
-    // Total RX byte count
-    uint64_t rx_bytes;
-    // DNS packet RX count
-    uint64_t rx_responses;
-    // Per-RCode stats
-    uint64_t rx_rcode[DNS_RCODE_MAX_TYPES];
 } __rte_cache_aligned;
 
 struct app_config;
