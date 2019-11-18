@@ -29,6 +29,33 @@
 #include "args.h"
 #include "conn.h"
 
+#define MAC_ADDR_XOR(addr1, addr2) \
+do { \
+    *((uint64_t *)(addr1)) ^= *((uint64_t *)(addr2)) & 0x0000FFFFFFFFFFFF; \
+} while (0)
+
+#define IPv6_ADDR_XOR(addr1, addr2) \
+do { \
+    *((uint64_t *)(addr1)) ^= *((uint64_t *)(addr2)); \
+    *((uint64_t *)((addr1) + 8)) ^= *((uint64_t *)((addr2) + 8)); \
+} while (0)
+
+#define IP4_SYN_MBUF_DATALEN ( \
+    sizeof(struct ether_hdr) + \
+    sizeof(struct ipv4_hdr) + \
+    sizeof(struct tcp_hdr) )
+#define IP6_SYN_MBUF_DATALEN ( \
+    sizeof(struct ether_hdr) + \
+    sizeof(struct ipv6_hdr) + \
+    sizeof(struct tcp_hdr) )
+
+#define IP4_ACK_MBUF_DATALEN IP4_SYN_MBUF_DATALEN
+#define IP6_ACK_MBUF_DATALEN IP6_SYN_MBUF_DATALEN
+#define IP4_MIN_PKT_LEN IP4_SYN_MBUF_DATALEN
+#define IP6_MIN_PKT_LEN IP6_SYN_MBUF_DATALEN
+#define MIN_PKT_LEN IP4_MIN_PKT_LEN
+#define IP4_DNS_PACKET_MIN_LEN (IP4_MIN_PKT_LEN + sizeof(struct dns_hdr))
+#define IP6_DNS_PACKET_MIN_LEN (IP6_MIN_PKT_LEN + sizeof(struct dns_hdr))
 #define MBUF_HAS_MIN_DNS_LEN(m) ( (rte_be_to_cpu_16(rte_pktmbuf_mtod(m, struct ether_hdr *)->ether_type) == ETHER_TYPE_IPv4 && (m)->pkt_len >= IP4_DNS_PACKET_MIN_LEN) || (rte_be_to_cpu_16(rte_pktmbuf_mtod(m, struct ether_hdr *)->ether_type) == ETHER_TYPE_IPv6 && (m)->pkt_len >= IP6_DNS_PACKET_MIN_LEN))
 
 static void send_ack(struct rte_mbuf *m, unsigned portid, struct app_config *app_config, bool fin);
@@ -140,8 +167,10 @@ void tcp6_open(unsigned portid, struct app_config *app_config) {
     ip->payload_len = rte_cpu_to_be_16(sizeof(struct tcp_hdr));
     ip->proto = IPPROTO_TCP;
     ip->hop_limits = 64;
-    *(uint64_t *)&ip->src_addr[0] = *(uint64_t *)&app_config->user_config.ip6_src_subnet[0] | rte_cpu_to_be_64(src_ip_rand_bits[0]);
-    *(uint64_t *)&ip->src_addr[8] = *(uint64_t *)&app_config->user_config.ip6_src_subnet[8] | rte_cpu_to_be_64(src_ip_rand_bits[1]);
+    *(uint64_t *) &ip->src_addr[0] =
+            *(uint64_t *) &app_config->user_config.ip6_src_subnet[0] | rte_cpu_to_be_64(src_ip_rand_bits[0]);
+    *(uint64_t *) &ip->src_addr[8] =
+            *(uint64_t *) &app_config->user_config.ip6_src_subnet[8] | rte_cpu_to_be_64(src_ip_rand_bits[1]);
     memcpy(ip->dst_addr, app_config->user_config.ip6_dst_addr, IPv6_ADDR_LEN);
 
     // Initialize L4 header
@@ -377,11 +406,9 @@ static void response_classify(struct rte_mbuf *m, unsigned portid, struct app_co
 
     if (rte_be_to_cpu_16(eth_hdr->ether_type) == ETHER_TYPE_IPv4) {
         dns_hdr = mbuf_ip4_dns_header_ptr(m);
-    }
-    else if (rte_be_to_cpu_16(eth_hdr->ether_type) == ETHER_TYPE_IPv6) {
+    } else if (rte_be_to_cpu_16(eth_hdr->ether_type) == ETHER_TYPE_IPv6) {
         dns_hdr = mbuf_ip6_dns_header_ptr(m);
-    }
-    else {
+    } else {
         RTE_LOG(CRIT, TCPGEN, "response_classify: invalid ether type\n");
         return;
     }
