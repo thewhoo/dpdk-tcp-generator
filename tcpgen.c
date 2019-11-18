@@ -37,6 +37,11 @@
 
 #define RTE_TEST_RX_DESC_DEFAULT 1024
 #define RTE_TEST_TX_DESC_DEFAULT 1024
+
+#define MAX_PKT_BURST 32
+#define BURST_TX_DRAIN_US 100 // TX drain every ~100us
+#define MEMPOOL_CACHE_SIZE 256
+
 static struct dpdk_config dpdk_default_config = {
         .nb_rxd = RTE_TEST_RX_DESC_DEFAULT,
         .nb_txd = RTE_TEST_TX_DESC_DEFAULT,
@@ -54,12 +59,12 @@ static struct dpdk_config dpdk_default_config = {
 
 static volatile bool force_quit;
 
-#define MAX_PKT_BURST 32
-#define BURST_TX_DRAIN_US 100 // TX drain every ~100us
-#define MEMPOOL_CACHE_SIZE 256
+static void tcpgen_main_loop(struct app_config *app_config);
+static int tcpgen_launch_one_lcore(struct app_config *app_config);
+static void check_all_ports_link_status(uint32_t port_mask);
+static void signal_handler(int signum);
 
-static void
-tcpgen_main_loop(struct app_config *app_config) {
+static void tcpgen_main_loop(struct app_config *app_config) {
     struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
     struct rte_mbuf *m;
     unsigned lcore_id;
@@ -175,15 +180,13 @@ tcpgen_main_loop(struct app_config *app_config) {
     }
 }
 
-static int
-tcpgen_launch_one_lcore(struct app_config *app_config) {
+static int tcpgen_launch_one_lcore(struct app_config *app_config) {
     tcpgen_main_loop(app_config);
     return 0;
 }
 
 // Check the link status of all ports in up to 9s, and print them
-static void
-check_all_ports_link_status(uint32_t port_mask) {
+static void check_all_ports_link_status(uint32_t port_mask) {
 #define CHECK_INTERVAL 100 // 100ms
 #define MAX_CHECK_TIME 90 // 9s (90 * 100ms) in total
     uint16_t portid;
@@ -238,8 +241,7 @@ check_all_ports_link_status(uint32_t port_mask) {
     }
 }
 
-static void
-signal_handler(int signum) {
+static void signal_handler(int signum) {
     if (signum == SIGINT || signum == SIGTERM) {
         printf("\n\nSignal %d received, preparing to exit...\n",
                signum);
@@ -247,8 +249,7 @@ signal_handler(int signum) {
     }
 }
 
-int
-main(int argc, char **argv) {
+int main(int argc, char **argv) {
     struct lcore_queue_conf *qconf;
     int ret;
     uint16_t nb_ports;
