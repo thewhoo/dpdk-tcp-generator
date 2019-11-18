@@ -9,7 +9,6 @@
 #include <string.h>
 #include <stdint.h>
 
-#include <rte_mempool.h>
 #include <rte_ether.h>
 #include <rte_ip.h>
 #include <rte_udp.h>
@@ -21,18 +20,19 @@
 #define MAGIC_USEC_TS 0xa1b2c3d4
 #define MAGIC_NSEC_TS 0xa1b23c4d
 
-static void pcap_list_insert(struct pcap_list *list, struct rte_mbuf *mbuf);
+static struct pcap_list_entry *pcap_list_insert(struct pcap_list *list, struct rte_mbuf *mbuf);
 
 void pcap_list_init(struct pcap_list *list)
 {
     list->first = list->current = list->last = NULL;
 }
 
-static void pcap_list_insert(struct pcap_list *list, struct rte_mbuf *mbuf)
+static struct pcap_list_entry *pcap_list_insert(struct pcap_list *list, struct rte_mbuf *mbuf)
 {
     struct pcap_list_entry *new_entry = rte_zmalloc("pcap_list_entry", sizeof(struct pcap_list_entry), 0);
     if(new_entry == NULL) {
-        rte_exit(EXIT_FAILURE, "rte_zmalloc failed (pcap_list_entry)\n");
+        RTE_LOG(CRIT, TCPGEN, "pcap_list_insert: rte_zmalloc (pcap_list_entry) failed\n");
+        return NULL;
     }
 
     new_entry->mbuf = mbuf;
@@ -45,6 +45,8 @@ static void pcap_list_insert(struct pcap_list *list, struct rte_mbuf *mbuf)
         list->last->next = new_entry;
         list->last = new_entry;
     }
+
+    return new_entry;
 }
 
 struct rte_mbuf *pcap_list_get(const struct pcap_list *list)
@@ -83,20 +85,23 @@ void pcap_list_destroy(struct pcap_list *list)
     list->first = list->current = list->last = NULL;
 }
 
-void pcap_parse(struct app_config *config)
+int pcap_parse(struct app_config *config)
 {
     FILE *fp = fopen(config->user_config.pcap_file, "r");
     if(fp == NULL) {
-        rte_exit(EXIT_FAILURE, "failed to open pcap file\n");
+        RTE_LOG(ERR, TCPGEN, "pcap_parse: failed to open pcap file\n");
+        return -1;
     }
 
     struct pcap_global_hdr hdr;
     if(fread(&hdr, sizeof(hdr), 1, fp) != 1) {
-        rte_exit(EXIT_FAILURE, "failed to read PCAP header\n");
+        RTE_LOG(ERR, TCPGEN, "pcap_parse: failed to read pcap global header\n");
+        return -1;
     }
 
     if(hdr.magic_number != MAGIC_USEC_TS && hdr.magic_number != MAGIC_NSEC_TS) {
-        rte_exit(EXIT_FAILURE, "invalid or unsupported PCAP magic\n");
+        RTE_LOG(ERR, TCPGEN, "pcap_parse: invalid or unsupported magic in pcap global header\n");
+        return -1;
     }
 
     size_t pcap_bytes = 0;
@@ -131,7 +136,7 @@ void pcap_parse(struct app_config *config)
         if(ether_type == ETHER_TYPE_IPv4) {
 
             if(fread(&ip4_hdr, sizeof(ip4_hdr), 1, fp) != 1) {
-                RTE_LOG(WARNING, TCPGEN, "pcap: failed to read ipv4 header\n");
+                RTE_LOG(WARNING, TCPGEN, "pcap_parse: failed to read ipv4 header\n");
                 goto packet_seek_end;
             }
 
@@ -139,7 +144,7 @@ void pcap_parse(struct app_config *config)
 
             // Check next header
             if(ip4_hdr.next_proto_id != IPPROTO_UDP) {
-                RTE_LOG(WARNING, TCPGEN, "pcap: unsupported non-UDP next protocol id in ivp4 header\n");
+                RTE_LOG(WARNING, TCPGEN, "pcap_parse: unsupported non-UDP next protocol id in ivp4 header\n");
                 goto packet_seek_end;
             }
 
@@ -150,7 +155,7 @@ void pcap_parse(struct app_config *config)
         else if(ether_type == ETHER_TYPE_IPv6) {
 
             if(fread(&ip6_hdr, sizeof(ip6_hdr), 1, fp) != 1) {
-                RTE_LOG(WARNING, TCPGEN, "pcap: failed to read ipv6 header\n");
+                RTE_LOG(WARNING, TCPGEN, "pcap_parse: failed to read ipv6 header\n");
                 goto packet_seek_end;
             }
 
@@ -158,7 +163,7 @@ void pcap_parse(struct app_config *config)
 
             // Check next header
             if(ip6_hdr.proto != IPPROTO_UDP) {
-                RTE_LOG(WARNING, TCPGEN, "pcap: unsupported non-UDP next protocol id in ivp6 header\n");
+                RTE_LOG(WARNING, TCPGEN, "pcap_parse: unsupported non-UDP next protocol id in ivp6 header\n");
                 goto packet_seek_end;
             }
 
@@ -166,13 +171,13 @@ void pcap_parse(struct app_config *config)
         }
 
         else {
-            RTE_LOG(WARNING, TCPGEN, "pcap: unsupported ether type (expected ipv4 or ipv6)\n");
+            RTE_LOG(WARNING, TCPGEN, "pcap_parse: unsupported ether type (expected ipv4 or ipv6)\n");
             goto packet_seek_end;
         }
 
         // Read L4 header
         if(fread(&udp_hdr, sizeof(udp_hdr), 1, fp) != 1) {
-            RTE_LOG(WARNING, TCPGEN, "pcap: failed to read udp header\n");
+            RTE_LOG(WARNING, TCPGEN, "pcap_parse: failed to read udp header\n");
             goto packet_seek_end;
         }
 
@@ -180,7 +185,8 @@ void pcap_parse(struct app_config *config)
 
         struct rte_mbuf *pcap_mbuf = rte_pktmbuf_alloc(config->dpdk_config.pktmbuf_pool);
         if(pcap_mbuf == NULL) {
-            rte_exit(EXIT_FAILURE, "pcap: mbuf allocation failed\n");
+            RTE_LOG(CRIT, TCPGEN, "pcap_parse: mbuf allocation failed\n");
+            return -1;
         }
 
         // Length field of TCP DNS at start of DNS payload
@@ -192,7 +198,7 @@ void pcap_parse(struct app_config *config)
         // Read in rest of mbuf
         size_t remaining_bytes = pkt_hdr.incl_len - read_bytes;
         if(remaining_bytes <= 0) {
-            RTE_LOG(WARNING, TCPGEN, "pcap: invalid dns payload size\n");
+            RTE_LOG(WARNING, TCPGEN, "pcap_parse: invalid dns payload size\n");
             goto packet_seek_end;
         }
 
@@ -201,13 +207,16 @@ void pcap_parse(struct app_config *config)
         *mbuf_tcp_dns_payload_len = rte_cpu_to_be_16(remaining_bytes);
 
         if(fread(mbuf_dns_payload, 1, remaining_bytes, fp) != remaining_bytes) {
-            RTE_LOG(WARNING, TCPGEN, "pcap: failed to read dns payload\n");
+            RTE_LOG(WARNING, TCPGEN, "pcap_parse: failed to read dns payload\n");
             goto packet_seek_end;
         }
 
         read_bytes += remaining_bytes;
 
-        pcap_list_insert(&config->pcap_list, pcap_mbuf);
+        if(pcap_list_insert(&config->pcap_list, pcap_mbuf) == NULL) {
+            RTE_LOG(CRIT, TCPGEN, "pcap_parse: failed to insert new pcap list entry\n");
+            return -1;
+        }
 
         pcap_bytes += read_bytes;
         pcap_records++;
@@ -220,9 +229,10 @@ void pcap_parse(struct app_config *config)
 
     fclose(fp);
 
-    RTE_LOG(INFO, TCPGEN, "pcap: successfully read in %d packets (%lu bytes)\n", pcap_records, pcap_bytes);
+    RTE_LOG(INFO, TCPGEN, "pcap_parse: successfully read in %d packets (%lu bytes)\n", pcap_records, pcap_bytes);
     if(pcap_records == 0) {
-        rte_exit(EXIT_FAILURE, "pcap: read in 0 packets, exiting...\n");
+        RTE_LOG(ERR, TCPGEN, "pcap_parse: failed to read in any valid packets\n");
+        return -1;
     }
 
     if(ipv4_query_count == 0) {
@@ -234,4 +244,6 @@ void pcap_parse(struct app_config *config)
     else {
         config->pcap_ipv6_probability = ipv6_query_count / ((double)(ipv4_query_count + ipv6_query_count)) * UINT64_MAX;
     }
+
+    return pcap_records;
 }

@@ -324,7 +324,9 @@ main(int argc, char **argv) {
 
     // Initialize QNAME table or PCAP linked-list based on supplied arguments
     if(app_config.user_config.supplied_args & ARG_PCAP_FILE) {
-        pcap_parse(&app_config);
+        if (pcap_parse(&app_config) == -1) {
+            rte_exit(EXIT_FAILURE, "critical failure in pcap_parse\n");
+        }
     }
     else {
         //qname_table_alloc(app_config.user_config.qname_file, &app_config.qname_table);
