@@ -37,12 +37,13 @@ First, check which network interfaces are available by running `dpdk-devbind --s
 ### Usage
 
 ```
-tcpgen [EAL options] -- -p PORTMASK [-t TCP_GAP] -c CONFIG {--pcap PCAP | --qnames QNAMES}
+tcpgen [EAL options] -- -p PORTMASK [-t TCP_GAP] -c CONFIG {--pcap PCAP | --qnames QNAMES} [--results PREFIX]
   -p PORTMASK: Hexadecimal bitmask of ports to generate traffic on
   -t TCP_GAP: TSC delay before opening a new TCP connection
   -c CONFIG: Generator configuration file (see documentation)
   --pcap PCAP: File containing reference packets for generating queries
   --qnames QNAMES: File containing QNAMEs and record types used to derive queries (see documentation)
+  --results PREFIX: Prefix of file containing per-lcore results in JSON format
 ```
 
 * The only EAL option that needs to be supplied is the core mask (supplied by the `-c` argument. Use `-c 1` to use a single thread. Multithreading is currently broken and behavior with a different core mask is undefined).

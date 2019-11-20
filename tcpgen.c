@@ -149,6 +149,7 @@ static void tcpgen_main_loop(struct app_config *app_config) {
     stop_tsc = rte_rdtsc();
     uint64_t runtime_tsc = stop_tsc - start_tsc;
     print_all_stats(app_config, lcore_id, runtime_tsc);
+    write_json_stats(app_config, lcore_id, runtime_tsc);
 }
 
 static int tcpgen_launch_one_lcore(struct app_config *app_config) {

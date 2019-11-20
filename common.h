@@ -89,6 +89,7 @@ struct user_config {
     const char *config_file;
     const char *qname_file;
     const char *pcap_file;
+    const char *result_file;
 
     uint8_t src_mac[ETHER_ADDR_LEN];
     uint8_t dst_mac[ETHER_ADDR_LEN];

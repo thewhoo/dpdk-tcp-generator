@@ -29,17 +29,20 @@ static const char short_options[] =
 
 #define CMD_LINE_OPT_PCAP_FILE "pcap"
 #define CMD_LINE_OPT_QNAME_FILE "qnames"
+#define CMD_LINE_OPT_RESULT_FILE "results"
 
 enum {
     CMD_LINE_OPT_MIN_NUM = 256,
     CMD_LINE_OPT_PCAP_FILE_NUM,
     CMD_LINE_OPT_QNAME_FILE_NUM,
+    CMD_LINE_OPT_RESULT_FILE_NUM,
 };
 
 static const struct option long_options[] = {
-        {CMD_LINE_OPT_PCAP_FILE,      required_argument, 0, CMD_LINE_OPT_PCAP_FILE_NUM},
-        {CMD_LINE_OPT_QNAME_FILE,     required_argument, 0, CMD_LINE_OPT_QNAME_FILE_NUM},
-        {NULL, 0,                                        0, 0}
+        {CMD_LINE_OPT_PCAP_FILE,   required_argument, 0, CMD_LINE_OPT_PCAP_FILE_NUM},
+        {CMD_LINE_OPT_QNAME_FILE,  required_argument, 0, CMD_LINE_OPT_QNAME_FILE_NUM},
+        {CMD_LINE_OPT_RESULT_FILE, required_argument, 0, CMD_LINE_OPT_RESULT_FILE_NUM},
+        {NULL, 0,                                     0, 0}
 };
 
 
@@ -82,6 +85,11 @@ int tcpgen_parse_args(int argc, char **argv, struct user_config *config) {
                 config->supplied_args |= ARG_QNAME_FILE;
                 break;
 
+            case CMD_LINE_OPT_RESULT_FILE_NUM:
+                config->result_file = optarg;
+                config->supplied_args |= ARG_RESULT_FILE;
+                break;
+
             default:
                 return -1;
         }
@@ -116,10 +124,11 @@ static int tcpgen_parse_portmask(const char *portmask) {
 }
 
 void tcpgen_usage(void) {
-    printf("tcpgen [EAL options] -- -p PORTMASK [-t TCP_GAP] -c CONFIG {--pcap PCAP | --qnames QNAMES}\n"
+    printf("tcpgen [EAL options] -- -p PORTMASK [-t TCP_GAP] -c CONFIG {--pcap PCAP | --qnames QNAMES} [--results PREFIX]\n"
            "  -p PORTMASK: Hexadecimal bitmask of ports to generate traffic on\n"
            "  -t TCP_GAP: TSC delay before opening a new TCP connection\n"
            "  -c CONFIG: Generator configuration file (see documentation)\n"
            "  --pcap PCAP: File containing reference packets for generating queries\n"
-           "  --qnames QNAMES: File containing QNAMEs and record types used to derive queries (see documentation)\n");
+           "  --qnames QNAMES: File containing QNAMEs and record types used to derive queries (see documentation)\n"
+           "  --results PREFIX: Prefix of file containing per-lcore results in JSON format\n");
 }
