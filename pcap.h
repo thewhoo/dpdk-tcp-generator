@@ -29,7 +29,8 @@ struct pcap_packet_hdr {
 };
 
 struct pcap_list_entry {
-    struct rte_mbuf *mbuf;
+    uint8_t *pcap_payload;
+    uint32_t payload_len;
     struct pcap_list_entry *next;
 };
 
@@ -40,7 +41,7 @@ struct pcap_list {
 };
 
 void pcap_list_init(struct pcap_list *list);
-struct rte_mbuf * pcap_list_get(const struct pcap_list *list);
+struct pcap_list_entry *pcap_list_get(const struct pcap_list *list);
 void pcap_list_next(struct pcap_list *list);
 void pcap_list_destroy(struct pcap_list *list);
 int pcap_parse(struct app_config *config);

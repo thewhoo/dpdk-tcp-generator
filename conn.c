@@ -290,13 +290,13 @@ static void send_ack(struct rte_mbuf *m, unsigned portid, struct app_config *app
 
 // FIXME: split app_config and stats
 static void generate_query_pcap(struct rte_mbuf *m, unsigned portid, struct app_config *app_config) {
-    struct rte_mbuf *ref_query = pcap_list_get(&app_config->pcap_list);
+    struct pcap_list_entry *ref_pcap = pcap_list_get(&app_config->pcap_list);
     // Move forward in PCAP list
     pcap_list_next(&app_config->pcap_list);
 
     // Copy data from reference mbuf to outgoing mbuf
-    memcpy(rte_pktmbuf_mtod_offset(m, void *, m->data_len), rte_pktmbuf_mtod(ref_query, void *), ref_query->data_len);
-    m->pkt_len = m->data_len = m->data_len + ref_query->data_len;
+    memcpy(rte_pktmbuf_mtod_offset(m, void *, m->data_len), ref_pcap->pcap_payload, ref_pcap->payload_len);
+    m->pkt_len = m->data_len = m->data_len + ref_pcap->payload_len;
 
     // Pointers to headers
     struct ether_hdr *eth_hdr = mbuf_eth_ptr(m);

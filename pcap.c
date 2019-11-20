@@ -20,22 +20,23 @@
 #define MAGIC_USEC_TS 0xa1b2c3d4
 #define MAGIC_NSEC_TS 0xa1b23c4d
 
-static struct pcap_list_entry *pcap_list_insert(struct pcap_list *list, struct rte_mbuf *mbuf);
+static struct pcap_list_entry *pcap_list_insert(struct pcap_list *list, uint8_t *payload, uint32_t payload_len);
 
 void pcap_list_init(struct pcap_list *list)
 {
     list->first = list->current = list->last = NULL;
 }
 
-static struct pcap_list_entry *pcap_list_insert(struct pcap_list *list, struct rte_mbuf *mbuf)
+static struct pcap_list_entry *pcap_list_insert(struct pcap_list *list, uint8_t *payload, uint32_t payload_len)
 {
-    struct pcap_list_entry *new_entry = rte_zmalloc("pcap_list_entry", sizeof(struct pcap_list_entry), 0);
+    struct pcap_list_entry *new_entry = rte_malloc("pcap_list_entry", sizeof(struct pcap_list_entry), 0);
     if(new_entry == NULL) {
-        RTE_LOG(CRIT, TCPGEN, "pcap_list_insert: rte_zmalloc (pcap_list_entry) failed\n");
+        RTE_LOG(CRIT, TCPGEN, "pcap_list_insert: rte_malloc (pcap_list_entry) failed\n");
         return NULL;
     }
 
-    new_entry->mbuf = mbuf;
+    new_entry->pcap_payload = payload;
+    new_entry->payload_len = payload_len;
     new_entry->next = NULL;
 
     if(list->first == NULL) {
@@ -49,7 +50,7 @@ static struct pcap_list_entry *pcap_list_insert(struct pcap_list *list, struct r
     return new_entry;
 }
 
-struct rte_mbuf *pcap_list_get(const struct pcap_list *list)
+struct pcap_list_entry *pcap_list_get(const struct pcap_list *list)
 {
     struct pcap_list_entry *current = list->current;
 
@@ -57,7 +58,7 @@ struct rte_mbuf *pcap_list_get(const struct pcap_list *list)
         return NULL;
     }
 
-    return current->mbuf;
+    return current;
 }
 
 void pcap_list_next(struct pcap_list *list)
@@ -77,6 +78,7 @@ void pcap_list_destroy(struct pcap_list *list)
     struct pcap_list_entry *current;
 
     for(current = list->first; current != NULL;) {
+        rte_free(current->pcap_payload);
         next = current->next;
         rte_free(current);
         current = next;
@@ -183,29 +185,29 @@ int pcap_parse(struct app_config *config)
 
         read_bytes += sizeof(udp_hdr);
 
-        struct rte_mbuf *pcap_mbuf = rte_pktmbuf_alloc(config->dpdk_config.pktmbuf_pool);
-        if(pcap_mbuf == NULL) {
-            RTE_LOG(CRIT, TCPGEN, "pcap_parse: mbuf allocation failed\n");
-            return -1;
-        }
-
-        // Length field of TCP DNS at start of DNS payload
-        uint16_t *mbuf_tcp_dns_payload_len = rte_pktmbuf_mtod(pcap_mbuf, uint16_t *);
-
-        // DNS payload
-        void *mbuf_dns_payload = rte_pktmbuf_mtod_offset(pcap_mbuf, void *, sizeof(*mbuf_tcp_dns_payload_len));
-
-        // Read in rest of mbuf
         size_t remaining_bytes = pkt_hdr.incl_len - read_bytes;
         if(remaining_bytes <= 0) {
             RTE_LOG(WARNING, TCPGEN, "pcap_parse: invalid dns payload size\n");
             goto packet_seek_end;
         }
 
-        pcap_mbuf->pkt_len = pcap_mbuf->data_len = remaining_bytes + sizeof(*mbuf_tcp_dns_payload_len);
+        uint8_t *payload = rte_malloc("pcap payload", remaining_bytes, 0);
+        if(payload == NULL) {
+            RTE_LOG(CRIT, TCPGEN, "pcap_parse: rte_malloc payload allocation failed\n");
+            return -1;
+        }
 
+        // Length field of TCP DNS at start of DNS payload
+        uint16_t *mbuf_tcp_dns_payload_len = (uint16_t *)payload;
+
+        uint32_t payload_len = remaining_bytes + sizeof(*mbuf_tcp_dns_payload_len);
         *mbuf_tcp_dns_payload_len = rte_cpu_to_be_16(remaining_bytes);
 
+        // DNS payload
+        void *mbuf_dns_payload = (void *)(payload + sizeof(*mbuf_tcp_dns_payload_len));
+
+
+        // Read in rest of mbuf
         if(fread(mbuf_dns_payload, 1, remaining_bytes, fp) != remaining_bytes) {
             RTE_LOG(WARNING, TCPGEN, "pcap_parse: failed to read dns payload\n");
             goto packet_seek_end;
@@ -213,7 +215,7 @@ int pcap_parse(struct app_config *config)
 
         read_bytes += remaining_bytes;
 
-        if(pcap_list_insert(&config->pcap_list, pcap_mbuf) == NULL) {
+        if(pcap_list_insert(&config->pcap_list, payload, payload_len) == NULL) {
             RTE_LOG(CRIT, TCPGEN, "pcap_parse: failed to insert new pcap list entry\n");
             return -1;
         }
