@@ -19,7 +19,11 @@
 #define CONF_MAC_MASK (CONF_OPT_NUM_SRC_MAC | CONF_OPT_NUM_DST_MAC)
 #define CONF_IP4_MASK (CONF_OPT_NUM_IP4_SRC_NET | CONF_OPT_NUM_IP4_SRC_MASK | CONF_OPT_NUM_IP4_DST_IP | CONF_OPT_NUM_TCP_DST_PORT)
 #define CONF_IP6_MASK (CONF_OPT_NUM_IP6_SRC_NET | CONF_OPT_NUM_IP6_SRC_MASK | CONF_OPT_NUM_IP6_DST_IP | CONF_OPT_NUM_TCP_DST_PORT)
-#define CONF_VALID(supplied_opts) (((supplied_opts) == (CONF_MAC_MASK | CONF_IP4_MASK)) || ((supplied_opts) == (CONF_MAC_MASK | CONF_IP6_MASK)) || ((supplied_opts) == (CONF_MAC_MASK | CONF_IP4_MASK | CONF_IP6_MASK)))
+#define CONF_OPTIONAL_OPTS (CONF_OPT_NUM_IP_IPV6_PROBABILITY)
+
+#define CONF_STRIP_OPTIONAL(opts) ((opts) & (~CONF_OPTIONAL_OPTS))
+
+#define CONF_VALID(supplied_opts) ((CONF_STRIP_OPTIONAL(supplied_opts) == (CONF_MAC_MASK | CONF_IP4_MASK)) || (CONF_STRIP_OPTIONAL(supplied_opts) == (CONF_MAC_MASK | CONF_IP6_MASK)) || (CONF_STRIP_OPTIONAL(supplied_opts) == (CONF_MAC_MASK | CONF_IP4_MASK | CONF_IP6_MASK)))
 
 #define CONF_OPT_SRC_MAC "source-mac"
 #define CONF_OPT_DST_MAC "destination-mac"
@@ -30,6 +34,7 @@
 #define CONF_OPT_IP6_SRC_MASK "ipv6-source-netmask"
 #define CONF_OPT_IP6_DST_IP "ipv6-destination-ip"
 #define CONF_OPT_TCP_DST_PORT "tcp-destination-port"
+#define CONF_OPT_IP_IPV6_PROBABILITY "ip-ipv6-probability"
 
 #define STR_EQUAL(str1, str2, len) (strncmp((str1), (str2), (len)) == 0)
 #define CHAR_IS_WHITESPACE(ch) (((ch) == ' ') || ((ch) == '\t') || ((ch) == '\r') || ((ch) == '\n') || ((ch) == EOF))
@@ -45,6 +50,7 @@ enum {
     CONF_AUTOMATON_STATE_IP6_SRC_MASK,
     CONF_AUTOMATON_STATE_IP6_DST_IP,
     CONF_AUTOMATON_STATE_TCP_DST_PORT,
+    CONF_AUTOMATON_STATE_IP_IPV6_PROBABILITY,
 };
 
 #define AUTOMATON_EXIT_FAIL(param) do {RTE_LOG(ERR, TCPGEN, "config_file_parse: failed to parse value of %s\n", (param)); return -1;} while (0)
@@ -74,15 +80,13 @@ static int parse_mac_addr_str(const char *mac_addr_str, uint8_t *dest) {
             }
             mac_addr_byte_index++;
             buf_index = 0;
-        }
-        else {
+        } else {
             buf[buf_index] = c;
             buf_index++;
         }
 
         str_index++;
-    }
-    while (c != '\0');
+    } while (c != '\0');
 
     if (mac_addr_byte_index == 6)
         return 0;
@@ -92,7 +96,7 @@ static int parse_mac_addr_str(const char *mac_addr_str, uint8_t *dest) {
 
 int config_file_parse(const char *filename, struct user_config *config) {
     FILE *fp = fopen(filename, "r");
-    if(fp == NULL) {
+    if (fp == NULL) {
         RTE_LOG(ERR, TCPGEN, "config_file_parse: failed to open configuration file\n");
         return -1;
     }
@@ -140,8 +144,10 @@ int config_file_parse(const char *filename, struct user_config *config) {
                 conf_automaton_state = CONF_AUTOMATON_STATE_IP6_DST_IP;
             } else if (STR_EQUAL(buf, CONF_OPT_TCP_DST_PORT, buf_pos)) {
                 conf_automaton_state = CONF_AUTOMATON_STATE_TCP_DST_PORT;
+            } else if (STR_EQUAL(buf, CONF_OPT_IP_IPV6_PROBABILITY, buf_pos)) {
+                conf_automaton_state = CONF_AUTOMATON_STATE_IP_IPV6_PROBABILITY;
             } else {
-                RTE_LOG(ERR, TCPGEN, "config_file_parse: unkown configuration key: %s\n", buf);
+                RTE_LOG(ERR, TCPGEN, "config_file_parse: unknown configuration key: %s\n", buf);
                 return -1;
             }
 
@@ -173,7 +179,7 @@ int config_file_parse(const char *filename, struct user_config *config) {
                     if (inet_pton(AF_INET, buf, config->ip4_src_netmask) != 1) {
                         AUTOMATON_EXIT_FAIL(CONF_OPT_IP4_SRC_MASK);
                     }
-                    config->ip4_src_rand_bit_mask = rte_be_to_cpu_32(~*(uint32_t *)config->ip4_src_netmask);
+                    config->ip4_src_rand_bit_mask = rte_be_to_cpu_32(~*(uint32_t *) config->ip4_src_netmask);
                     config->supplied_config_opts |= CONF_OPT_NUM_IP4_SRC_MASK;
                     break;
                 case CONF_AUTOMATON_STATE_IP4_DST_IP:
@@ -192,8 +198,8 @@ int config_file_parse(const char *filename, struct user_config *config) {
                     if (inet_pton(AF_INET6, buf, config->ip6_src_netmask) != 1) {
                         AUTOMATON_EXIT_FAIL(CONF_OPT_IP6_SRC_MASK);
                     }
-                    config->ip6_src_rand_bit_mask[0] = rte_be_to_cpu_64(~*(uint64_t *)&config->ip6_src_netmask[0]);
-                    config->ip6_src_rand_bit_mask[1] = rte_be_to_cpu_64(~*(uint64_t *)&config->ip6_src_netmask[8]);
+                    config->ip6_src_rand_bit_mask[0] = rte_be_to_cpu_64(~*(uint64_t *) &config->ip6_src_netmask[0]);
+                    config->ip6_src_rand_bit_mask[1] = rte_be_to_cpu_64(~*(uint64_t *) &config->ip6_src_netmask[8]);
                     config->supplied_config_opts |= CONF_OPT_NUM_IP6_SRC_MASK;
                     break;
                 case CONF_AUTOMATON_STATE_IP6_DST_IP:
@@ -208,6 +214,13 @@ int config_file_parse(const char *filename, struct user_config *config) {
                         AUTOMATON_EXIT_FAIL(CONF_OPT_TCP_DST_PORT);
                     }
                     config->supplied_config_opts |= CONF_OPT_NUM_TCP_DST_PORT;
+                    break;
+                case CONF_AUTOMATON_STATE_IP_IPV6_PROBABILITY:
+                    config->ip_ipv6_probability = strtod(buf, &endptr);
+                    if(endptr == buf) {
+                        AUTOMATON_EXIT_FAIL(CONF_OPT_IP_IPV6_PROBABILITY);
+                    }
+                    config->supplied_config_opts |= CONF_OPT_NUM_IP_IPV6_PROBABILITY;
                     break;
                 default:
                     RTE_LOG(ERR, TCPGEN, "config_file_parse: invalid conf automaton state\n");

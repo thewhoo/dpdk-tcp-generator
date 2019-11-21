@@ -60,8 +60,11 @@ static struct dpdk_config dpdk_default_config = {
 static volatile bool force_quit;
 
 static void tcpgen_main_loop(struct app_config *app_config);
+
 static int tcpgen_launch_one_lcore(struct app_config *app_config);
+
 static void check_all_ports_link_status(uint32_t port_mask);
+
 static void signal_handler(int signum);
 
 static void tcpgen_main_loop(struct app_config *app_config) {
@@ -119,7 +122,7 @@ static void tcpgen_main_loop(struct app_config *app_config) {
             portid = qconf->port_list[i];
 
             if (tx_diff > app_config->user_config.tx_tsc_period) {
-                if(rte_rand() < app_config->pcap_ipv6_probability)
+                if (rte_rand() < app_config->ipv6_probability)
                     tcp6_open(portid, app_config);
                 else
                     tcp4_open(portid, app_config);
@@ -280,12 +283,11 @@ int main(int argc, char **argv) {
     }
 
     // Initialize QNAME table or PCAP linked-list based on supplied arguments
-    if(app_config.user_config.supplied_args & ARG_PCAP_FILE) {
+    if (app_config.user_config.supplied_args & ARG_PCAP_FILE) {
         if (pcap_parse(&app_config) == -1) {
             rte_exit(EXIT_FAILURE, "Critical error occured when parsing PCAP file\n");
         }
-    }
-    else {
+    } else {
         //qname_table_alloc(app_config.user_config.qname_file, &app_config.qname_table);
         // FIXME
         rte_exit(EXIT_FAILURE, "use of the QNAME table is currently unsupported\n");
@@ -294,6 +296,19 @@ int main(int argc, char **argv) {
     // Check validity of port mask
     if (app_config.user_config.enabled_port_mask & ~((1 << nb_ports) - 1))
         rte_exit(EXIT_FAILURE, "Invalid portmask; possible (0x%x)\n", (1 << nb_ports) - 1);
+
+    // Explicit IPv6 probability in config overrides PCAP-derived probability
+    if (app_config.user_config.supplied_config_opts & CONF_OPT_NUM_IP_IPV6_PROBABILITY) {
+        if(app_config.user_config.ip_ipv6_probability >= 1.0) {
+            app_config.ipv6_probability = INT64_MAX;
+        } else if (app_config.user_config.ip_ipv6_probability <= 0.0 ){
+            app_config.ipv6_probability = 0;
+        } else {
+            app_config.ipv6_probability = (uint64_t)(app_config.user_config.ip_ipv6_probability * (double)INT64_MAX);
+        }
+    } else {
+        app_config.ipv6_probability = app_config.pcap_ipv6_probability;
+    }
 
     rx_lcore_id = 0;
     qconf = NULL;
@@ -381,8 +396,8 @@ int main(int argc, char **argv) {
 
         // Initialize TX buffers
         app_config.dpdk_config.tx_buffer[portid] = rte_zmalloc_socket("tx_buffer",
-                                               RTE_ETH_TX_BUFFER_SIZE(MAX_PKT_BURST), 0,
-                                               rte_eth_dev_socket_id(portid));
+                                                                      RTE_ETH_TX_BUFFER_SIZE(MAX_PKT_BURST), 0,
+                                                                      rte_eth_dev_socket_id(portid));
         if (app_config.dpdk_config.tx_buffer[portid] == NULL)
             rte_exit(EXIT_FAILURE, "Cannot allocate buffer for tx on port %u\n",
                      portid);
@@ -419,7 +434,7 @@ int main(int argc, char **argv) {
 
     ret = 0;
     // launch per-lcore init on every lcore
-    rte_eal_mp_remote_launch((lcore_function_t *)tcpgen_launch_one_lcore, &app_config, CALL_MASTER);
+    rte_eal_mp_remote_launch((lcore_function_t *) tcpgen_launch_one_lcore, &app_config, CALL_MASTER);
     RTE_LCORE_FOREACH_SLAVE(lcore_id) {
         if (rte_eal_wait_lcore(lcore_id) < 0) {
             ret = -1;

@@ -103,6 +103,7 @@ struct user_config {
     uint64_t ip6_src_rand_bit_mask[2];
     uint8_t ip6_dst_addr[IPv6_ADDR_LEN];
     uint16_t tcp_dst_port;
+    double ip_ipv6_probability;
 
     uint32_t supplied_args;
     uint32_t supplied_config_opts;
@@ -118,6 +119,8 @@ struct app_config {
     struct qname_table qname_table;
     struct pcap_list pcap_list;
     uint64_t pcap_ipv6_probability;
+
+    uint64_t ipv6_probability;
 };
 
 #endif //DPDK_TCP_GENERATOR_COMMON_H

@@ -244,7 +244,7 @@ int pcap_parse(struct app_config *config)
         config->pcap_ipv6_probability = 0;
     }
     else {
-        config->pcap_ipv6_probability = ipv6_query_count / ((double)(ipv4_query_count + ipv6_query_count)) * UINT64_MAX;
+        config->pcap_ipv6_probability = (double)ipv6_query_count / ((double)(ipv4_query_count + ipv6_query_count)) * INT64_MAX;
     }
 
     return pcap_records;
