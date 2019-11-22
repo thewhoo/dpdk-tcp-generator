@@ -11,6 +11,7 @@
 #include <getopt.h>
 
 #include <rte_log.h>
+#include <rte_cycles.h>
 
 #include "common.h"
 #include "args.h"
@@ -19,11 +20,13 @@
 #define ARGS_REQUIRED_QNAME (ARG_PORT_MASK | ARG_CONFIG_FILE | ARG_QNAME_FILE)
 #define ARGS_VALID(args) (((((args) & ARGS_REQUIRED_PCAP) == ARGS_REQUIRED_PCAP) && !((args) & ARG_QNAME_FILE)) || ((((args) & ARGS_REQUIRED_QNAME) == ARGS_REQUIRED_QNAME) && !((args) & ARG_PCAP_FILE)))
 
+#define USEC_TO_TSC(usec) ((usec) * (rte_get_tsc_hz() / 1000000))
+
 static int tcpgen_parse_portmask(const char *portmask);
 
 static const char short_options[] =
         "p:"  // portmask
-        "t:"  // tcp gap
+        "g:"  // tcp gap
         "c:"  // config file
 ;
 
@@ -49,6 +52,7 @@ static const struct option long_options[] = {
 int tcpgen_parse_args(int argc, char **argv, struct user_config *config) {
     int opt, ret;
     int option_index;
+    char *endptr; // strtoul
     char **argvopt;
     char *prgname = argv[0];
 
@@ -59,14 +63,18 @@ int tcpgen_parse_args(int argc, char **argv, struct user_config *config) {
             case 'p':
                 config->enabled_port_mask = tcpgen_parse_portmask(optarg);
                 if (config->enabled_port_mask == 0) {
-                    RTE_LOG(CRIT, TCPGEN, "args: invalid portmask\n");
+                    RTE_LOG(ERR, TCPGEN, "args: invalid portmask\n");
                     return -1;
                 }
                 config->supplied_args |= ARG_PORT_MASK;
                 break;
 
-            case 't':
-                config->tx_tsc_period = strtoull(optarg, NULL, 10);
+            case 'g':
+                config->tx_tsc_period = USEC_TO_TSC(strtoul(optarg, &endptr, 10));
+                if(*endptr != '\0') {
+                    RTE_LOG(ERR, TCPGEN, "args: invalid tcp gap\n");
+                    return -1;
+                }
                 config->supplied_args |= ARG_TSC_PERIOD;
                 break;
 
@@ -124,9 +132,9 @@ static int tcpgen_parse_portmask(const char *portmask) {
 }
 
 void tcpgen_usage(void) {
-    printf("tcpgen [EAL options] -- -p PORTMASK [-t TCP_GAP] -c CONFIG {--pcap PCAP | --qnames QNAMES} [--results PREFIX]\n"
+    printf("tcpgen [EAL options] -- -p PORTMASK [-g USEC_TCP_GAP] -c CONFIG {--pcap PCAP | --qnames QNAMES} [--results PREFIX]\n"
            "  -p PORTMASK: Hexadecimal bitmask of ports to generate traffic on\n"
-           "  -t TCP_GAP: TSC delay before opening a new TCP connection\n"
+           "  -g USEC_TCP_GAP: Open new TCP connection no earlier than every USEC_TCP_GAP microseconds\n"
            "  -c CONFIG: Generator configuration file (see documentation)\n"
            "  --pcap PCAP: File containing reference packets for generating queries\n"
            "  --qnames QNAMES: File containing QNAMEs and record types used to derive queries (see documentation)\n"

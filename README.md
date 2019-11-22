@@ -37,9 +37,9 @@ First, check which network interfaces are available by running `dpdk-devbind --s
 ### Usage
 
 ```
-tcpgen [EAL options] -- -p PORTMASK [-t TCP_GAP] -c CONFIG {--pcap PCAP | --qnames QNAMES} [--results PREFIX]
+tcpgen [EAL options] -- -p PORTMASK [-g USEC_TCP_GAP] -c CONFIG {--pcap PCAP | --qnames QNAMES} [--results PREFIX]
   -p PORTMASK: Hexadecimal bitmask of ports to generate traffic on
-  -t TCP_GAP: TSC delay before opening a new TCP connection
+  -g USEC_TCP_GAP: Open a new TCP connection no earlier than every USEC_TCP_GAP microseconds
   -c CONFIG: Generator configuration file (see documentation)
   --pcap PCAP: File containing reference packets for generating queries
   --qnames QNAMES: File containing QNAMEs and record types used to derive queries (see documentation)
@@ -48,8 +48,8 @@ tcpgen [EAL options] -- -p PORTMASK [-t TCP_GAP] -c CONFIG {--pcap PCAP | --qnam
 
 * The only EAL option that needs to be supplied is the core mask (supplied by the `-c` argument. Use `-c 1` to use a single thread. Multithreading is currently broken and behavior with a different core mask is undefined).
 
-* Use the portmask to select ports on which to generate traffic (bit mask that selects interfaces bound to a DPDK-compatible driver in the order displayed in `dpdk-devbind --status`)
-* The tcp gap is the CPU clock cycle interval between opening new TCP connections (the default is 10 000 000 000 which means ~1 new connection every 3 seconds on a 3.3 GHz CPU). A value of 0 will cause new connections to be opened with the maximum possible frequency.
+* Use `PORTMASK` to select ports on which to generate traffic (bit mask that selects interfaces bound to a DPDK-compatible driver in the order displayed in `dpdk-devbind --status`)
+* Use `USEC_TCP_GAP` to specify delay between opening new TCP connections (in microseconds). If the argument isn't supplied or has a value of 0, TCP connections will be opened with the maximum possible frequency.
 * All other configuration is specified in the configuration file. See `example.conf`.
 
 ### Notes
