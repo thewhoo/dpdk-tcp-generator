@@ -28,6 +28,7 @@ static const char short_options[] =
         "p:"  // portmask
         "g:"  // tcp gap
         "c:"  // config file
+        "r:"  // runtime
 ;
 
 #define CMD_LINE_OPT_PCAP_FILE "pcap"
@@ -83,6 +84,15 @@ int tcpgen_parse_args(int argc, char **argv, struct user_config *config) {
                 config->supplied_args |= ARG_CONFIG_FILE;
                 break;
 
+            case 'r':
+                config->tsc_runtime = USEC_TO_TSC((strtoul(optarg, &endptr, 10)));
+                if(*endptr != '\0') {
+                    RTE_LOG(ERR, TCPGEN, "args: invalid runtime\n");
+                    return -1;
+                }
+                config->supplied_args |= ARG_RUNTIME;
+                break;
+
             case CMD_LINE_OPT_PCAP_FILE_NUM:
                 config->pcap_file = optarg;
                 config->supplied_args |= ARG_PCAP_FILE;
@@ -132,9 +142,10 @@ static int tcpgen_parse_portmask(const char *portmask) {
 }
 
 void tcpgen_usage(void) {
-    printf("tcpgen [EAL options] -- -p PORTMASK [-g USEC_TCP_GAP] -c CONFIG {--pcap PCAP | --qnames QNAMES} [--results PREFIX]\n"
+    printf("tcpgen [EAL options] -- -p PORTMASK -c CONFIG [-g USEC_TCP_GAP] [-r USEC_RUNTIME] {--pcap PCAP | --qnames QNAMES} [--results PREFIX]\n"
            "  -p PORTMASK: Hexadecimal bitmask of ports to generate traffic on\n"
            "  -g USEC_TCP_GAP: Open new TCP connection no earlier than every USEC_TCP_GAP microseconds\n"
+           "  -r USEC_RUNTIME: Stop after USEC_RUNTIME microseconds\n"
            "  -c CONFIG: Generator configuration file (see documentation)\n"
            "  --pcap PCAP: File containing reference packets for generating queries\n"
            "  --qnames QNAMES: File containing QNAMEs and record types used to derive queries (see documentation)\n"

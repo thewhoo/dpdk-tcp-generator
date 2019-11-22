@@ -37,9 +37,10 @@ First, check which network interfaces are available by running `dpdk-devbind --s
 ### Usage
 
 ```
-tcpgen [EAL options] -- -p PORTMASK [-g USEC_TCP_GAP] -c CONFIG {--pcap PCAP | --qnames QNAMES} [--results PREFIX]
+tcpgen [EAL options] -- -p PORTMASK -c CONFIG [-g USEC_TCP_GAP] [-r USEC_RUNTIME] {--pcap PCAP | --qnames QNAMES} [--results PREFIX]
   -p PORTMASK: Hexadecimal bitmask of ports to generate traffic on
   -g USEC_TCP_GAP: Open a new TCP connection no earlier than every USEC_TCP_GAP microseconds
+  -r USEC_RUNTIME: Stop after USEC_RUNTIME microseconds
   -c CONFIG: Generator configuration file (see documentation)
   --pcap PCAP: File containing reference packets for generating queries
   --qnames QNAMES: File containing QNAMEs and record types used to derive queries (see documentation)
@@ -50,6 +51,7 @@ tcpgen [EAL options] -- -p PORTMASK [-g USEC_TCP_GAP] -c CONFIG {--pcap PCAP | -
 
 * Use `PORTMASK` to select ports on which to generate traffic (bit mask that selects interfaces bound to a DPDK-compatible driver in the order displayed in `dpdk-devbind --status`)
 * Use `USEC_TCP_GAP` to specify delay between opening new TCP connections (in microseconds). If the argument isn't supplied or has a value of 0, TCP connections will be opened with the maximum possible frequency.
+* Use `USEC_RUNTIME` to specify the total runtime of the generator (in microseconds). If no runtime limit is given, the generator will run until stopped.
 * All other configuration is specified in the configuration file. See `example.conf`.
 
 ### Notes

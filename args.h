@@ -13,6 +13,7 @@
 #define ARG_PCAP_FILE (1 << 3)
 #define ARG_QNAME_FILE (1 << 4)
 #define ARG_RESULT_FILE (1 << 5)
+#define ARG_RUNTIME (1 << 6)
 
 void tcpgen_usage(void);
 int tcpgen_parse_args(int argc, char **argv, struct user_config *args);

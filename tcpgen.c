@@ -105,6 +105,10 @@ static void tcpgen_main_loop(struct app_config *app_config) {
     while (!force_quit) {
         cur_tsc = rte_rdtsc();
 
+        if(app_config->user_config.tsc_runtime > 0 && (cur_tsc - start_tsc) > app_config->user_config.tsc_runtime) {
+            force_quit = true;
+        }
+
         // TX burst queue drain
         diff_tsc = cur_tsc - prev_tsc;
         if (unlikely(diff_tsc > drain_tsc)) {

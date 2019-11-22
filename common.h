@@ -86,6 +86,8 @@ struct user_config {
     // TSC between opening new TCP connections
     uint64_t tx_tsc_period;
 
+    uint64_t tsc_runtime;
+
     const char *config_file;
     const char *qname_file;
     const char *pcap_file;
