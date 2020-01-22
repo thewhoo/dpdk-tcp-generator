@@ -40,10 +40,10 @@ struct pcap_list {
     struct pcap_list_entry *current;
 };
 
-void pcap_list_init(struct pcap_list *list);
+void pcap_list_init_all(struct pcap_list *pcap_lists);
 struct pcap_list_entry *pcap_list_get(const struct pcap_list *list);
 void pcap_list_next(struct pcap_list *list);
-void pcap_list_destroy(struct pcap_list *list);
+void pcap_list_destroy_all(struct pcap_list *pcap_lists);
 int pcap_parse(struct app_config *config);
 
 #endif //DPDK_TCP_GENERATOR_PCAP_H

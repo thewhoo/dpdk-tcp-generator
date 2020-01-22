@@ -288,9 +288,11 @@ static void send_ack(struct rte_mbuf *m, unsigned portid, struct app_config *app
 
 // FIXME: split app_config and stats
 static void generate_query_pcap(struct rte_mbuf *m, unsigned portid, struct app_config *app_config) {
-    struct pcap_list_entry *ref_pcap = pcap_list_get(&app_config->pcap_list);
+    unsigned lcore_id = rte_lcore_id();
+
+    struct pcap_list_entry *ref_pcap = pcap_list_get(&app_config->pcap_lists[lcore_id]);
     // Move forward in PCAP list
-    pcap_list_next(&app_config->pcap_list);
+    pcap_list_next(&app_config->pcap_lists[lcore_id]);
 
     // Copy data from reference mbuf to outgoing mbuf
     memcpy(rte_pktmbuf_mtod_offset(m, void *, m->data_len), ref_pcap->pcap_payload, ref_pcap->payload_len);

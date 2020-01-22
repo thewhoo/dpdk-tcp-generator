@@ -13,6 +13,7 @@
 #include <rte_ip.h>
 #include <rte_udp.h>
 #include <rte_log.h>
+#include <rte_lcore.h>
 
 #include "pcap.h"
 #include "common.h"
@@ -21,11 +22,7 @@
 #define MAGIC_NSEC_TS 0xa1b23c4d
 
 static struct pcap_list_entry *pcap_list_insert(struct pcap_list *list, uint8_t *payload, uint32_t payload_len);
-
-void pcap_list_init(struct pcap_list *list)
-{
-    list->first = list->current = list->last = NULL;
-}
+static void pcap_list_destroy(struct pcap_list *list);
 
 static struct pcap_list_entry *pcap_list_insert(struct pcap_list *list, uint8_t *payload, uint32_t payload_len)
 {
@@ -61,6 +58,18 @@ struct pcap_list_entry *pcap_list_get(const struct pcap_list *list)
     return current;
 }
 
+void pcap_list_init_all(struct pcap_list *pcap_lists) {
+    for(int i = 0; i < RTE_MAX_LCORE; i++) {
+        pcap_lists[i].first = pcap_lists[i].current = pcap_lists[i].last = NULL;
+    }
+}
+
+void pcap_list_destroy_all(struct pcap_list *pcap_lists) {
+    for(int i = 0; i < RTE_MAX_LCORE; i++) {
+        pcap_list_destroy(&pcap_lists[i]);
+    }
+}
+
 void pcap_list_next(struct pcap_list *list)
 {
     if(list->current == NULL)
@@ -72,7 +81,7 @@ void pcap_list_next(struct pcap_list *list)
         list->current = list->current->next;
 }
 
-void pcap_list_destroy(struct pcap_list *list)
+static void pcap_list_destroy(struct pcap_list *list)
 {
     struct pcap_list_entry *next;
     struct pcap_list_entry *current;
@@ -105,6 +114,9 @@ int pcap_parse(struct app_config *config)
         RTE_LOG(ERR, TCPGEN, "pcap_parse: invalid or unsupported magic in pcap global header\n");
         return -1;
     }
+
+    // Insert packets round-robin in per-lcore pcap lists (start with master)
+    unsigned lcore_id = rte_get_master_lcore();
 
     size_t pcap_bytes = 0;
     uint32_t pcap_records = 0;
@@ -215,10 +227,12 @@ int pcap_parse(struct app_config *config)
 
         read_bytes += remaining_bytes;
 
-        if(pcap_list_insert(&config->pcap_list, payload, payload_len) == NULL) {
+        if(pcap_list_insert(&config->pcap_lists[lcore_id], payload, payload_len) == NULL) {
             RTE_LOG(CRIT, TCPGEN, "pcap_parse: failed to insert new pcap list entry\n");
             return -1;
         }
+        // Insert next packet in next lcore's list
+        lcore_id = rte_get_next_lcore(lcore_id, 0, 1);
 
         pcap_bytes += read_bytes;
         pcap_records++;

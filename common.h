@@ -117,7 +117,7 @@ struct app_config {
 
     struct user_config user_config;
 
-    struct pcap_list pcap_list;
+    struct pcap_list pcap_lists[RTE_MAX_LCORE];
     uint64_t pcap_ipv6_probability;
 
     uint64_t ipv6_probability;

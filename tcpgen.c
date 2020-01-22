@@ -277,7 +277,7 @@ int main(int argc, char **argv) {
 
 
     // Initialize helper structures
-    pcap_list_init(&app_config.pcap_list);
+    pcap_list_init_all(app_config.pcap_lists);
 
     // Read in configuration file
     if (config_file_parse(app_config.user_config.config_file, &app_config.user_config) != 0) {
@@ -448,7 +448,7 @@ int main(int argc, char **argv) {
         printf(" Done\n");
     }
 
-    pcap_list_destroy(&app_config.pcap_list);
+    pcap_list_destroy_all(app_config.pcap_lists);
 
     printf("Bye...\n");
 
