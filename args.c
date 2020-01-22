@@ -16,9 +16,8 @@
 #include "common.h"
 #include "args.h"
 
-#define ARGS_REQUIRED_PCAP (ARG_PORT_MASK | ARG_CONFIG_FILE | ARG_PCAP_FILE)
-#define ARGS_REQUIRED_QNAME (ARG_PORT_MASK | ARG_CONFIG_FILE | ARG_QNAME_FILE)
-#define ARGS_VALID(args) (((((args) & ARGS_REQUIRED_PCAP) == ARGS_REQUIRED_PCAP) && !((args) & ARG_QNAME_FILE)) || ((((args) & ARGS_REQUIRED_QNAME) == ARGS_REQUIRED_QNAME) && !((args) & ARG_PCAP_FILE)))
+#define ARGS_REQUIRED (ARG_PORT_MASK | ARG_CONFIG_FILE | ARG_PCAP_FILE)
+#define ARGS_VALID(args) (((args) & ARGS_REQUIRED) == ARGS_REQUIRED)
 
 #define USEC_TO_TSC(usec) ((usec) * (rte_get_tsc_hz() / 1000000))
 
@@ -32,19 +31,16 @@ static const char short_options[] =
 ;
 
 #define CMD_LINE_OPT_PCAP_FILE "pcap"
-#define CMD_LINE_OPT_QNAME_FILE "qnames"
 #define CMD_LINE_OPT_RESULT_FILE "results"
 
 enum {
     CMD_LINE_OPT_MIN_NUM = 256,
     CMD_LINE_OPT_PCAP_FILE_NUM,
-    CMD_LINE_OPT_QNAME_FILE_NUM,
     CMD_LINE_OPT_RESULT_FILE_NUM,
 };
 
 static const struct option long_options[] = {
         {CMD_LINE_OPT_PCAP_FILE,   required_argument, 0, CMD_LINE_OPT_PCAP_FILE_NUM},
-        {CMD_LINE_OPT_QNAME_FILE,  required_argument, 0, CMD_LINE_OPT_QNAME_FILE_NUM},
         {CMD_LINE_OPT_RESULT_FILE, required_argument, 0, CMD_LINE_OPT_RESULT_FILE_NUM},
         {NULL, 0,                                     0, 0}
 };
@@ -98,11 +94,6 @@ int tcpgen_parse_args(int argc, char **argv, struct user_config *config) {
                 config->supplied_args |= ARG_PCAP_FILE;
                 break;
 
-            case CMD_LINE_OPT_QNAME_FILE_NUM:
-                config->qname_file = optarg;
-                config->supplied_args |= ARG_QNAME_FILE;
-                break;
-
             case CMD_LINE_OPT_RESULT_FILE_NUM:
                 config->result_file = optarg;
                 config->supplied_args |= ARG_RESULT_FILE;
@@ -142,12 +133,11 @@ static int tcpgen_parse_portmask(const char *portmask) {
 }
 
 void tcpgen_usage(void) {
-    printf("tcpgen [EAL options] -- -p PORTMASK -c CONFIG [-g USEC_TCP_GAP] [-r USEC_RUNTIME] {--pcap PCAP | --qnames QNAMES} [--results PREFIX]\n"
+    printf("tcpgen [EAL options] -- -p PORTMASK -c CONFIG --pcap PCAP [-g USEC_TCP_GAP] [-r USEC_RUNTIME] [--results PREFIX]\n"
            "  -p PORTMASK: Hexadecimal bitmask of ports to generate traffic on\n"
            "  -g USEC_TCP_GAP: Open new TCP connection no earlier than every USEC_TCP_GAP microseconds\n"
            "  -r USEC_RUNTIME: Stop after USEC_RUNTIME microseconds\n"
            "  -c CONFIG: Generator configuration file (see documentation)\n"
            "  --pcap PCAP: File containing reference packets for generating queries\n"
-           "  --qnames QNAMES: File containing QNAMEs and record types used to derive queries (see documentation)\n"
            "  --results PREFIX: Prefix of file containing per-lcore results in JSON format\n");
 }

@@ -29,7 +29,6 @@
 #include <rte_mbuf.h>
 
 #include "dns.h"
-#include "qname_table.h"
 #include "pcap.h"
 #include "stats.h"
 
@@ -118,7 +117,6 @@ struct app_config {
 
     struct user_config user_config;
 
-    struct qname_table qname_table;
     struct pcap_list pcap_list;
     uint64_t pcap_ipv6_probability;
 

@@ -27,7 +27,6 @@
 #include <rte_ethdev.h>
 #include <rte_mbuf.h>
 
-#include "qname_table.h"
 #include "pcap.h"
 #include "common.h"
 #include "args.h"
@@ -105,7 +104,7 @@ static void tcpgen_main_loop(struct app_config *app_config) {
     while (!force_quit) {
         cur_tsc = rte_rdtsc();
 
-        if(app_config->user_config.tsc_runtime > 0 && (cur_tsc - start_tsc) > app_config->user_config.tsc_runtime) {
+        if (app_config->user_config.tsc_runtime > 0 && (cur_tsc - start_tsc) > app_config->user_config.tsc_runtime) {
             force_quit = true;
         }
 
@@ -278,7 +277,6 @@ int main(int argc, char **argv) {
 
 
     // Initialize helper structures
-    memset(&app_config.qname_table, 0, sizeof(struct qname_table));
     pcap_list_init(&app_config.pcap_list);
 
     // Read in configuration file
@@ -286,15 +284,9 @@ int main(int argc, char **argv) {
         rte_exit(EXIT_FAILURE, "Failed to parse configuration file\n");
     }
 
-    // Initialize QNAME table or PCAP linked-list based on supplied arguments
-    if (app_config.user_config.supplied_args & ARG_PCAP_FILE) {
-        if (pcap_parse(&app_config) == -1) {
-            rte_exit(EXIT_FAILURE, "Critical error occured when parsing PCAP file\n");
-        }
-    } else {
-        //qname_table_alloc(app_config.user_config.qname_file, &app_config.qname_table);
-        // FIXME
-        rte_exit(EXIT_FAILURE, "use of the QNAME table is currently unsupported\n");
+    // Initialize PCAP linked-list based on supplied arguments
+    if (pcap_parse(&app_config) == -1) {
+        rte_exit(EXIT_FAILURE, "Critical error occured when parsing PCAP file\n");
     }
 
     // Check validity of port mask
@@ -303,12 +295,13 @@ int main(int argc, char **argv) {
 
     // Explicit IPv6 probability in config overrides PCAP-derived probability
     if (app_config.user_config.supplied_config_opts & CONF_OPT_NUM_IP_IPV6_PROBABILITY) {
-        if(app_config.user_config.ip_ipv6_probability >= 1.0) {
+        if (app_config.user_config.ip_ipv6_probability >= 1.0) {
             app_config.ipv6_probability = INT64_MAX;
-        } else if (app_config.user_config.ip_ipv6_probability <= 0.0 ){
+        } else if (app_config.user_config.ip_ipv6_probability <= 0.0) {
             app_config.ipv6_probability = 0;
         } else {
-            app_config.ipv6_probability = (uint64_t)(app_config.user_config.ip_ipv6_probability * (double)INT64_MAX);
+            app_config.ipv6_probability = (uint64_t) (app_config.user_config.ip_ipv6_probability *
+                                                      (double) INT64_MAX);
         }
     } else {
         app_config.ipv6_probability = app_config.pcap_ipv6_probability;
@@ -455,7 +448,6 @@ int main(int argc, char **argv) {
         printf(" Done\n");
     }
 
-    qname_table_free(&app_config.qname_table);
     pcap_list_destroy(&app_config.pcap_list);
 
     printf("Bye...\n");

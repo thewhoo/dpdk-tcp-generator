@@ -23,7 +23,6 @@
 #include <rte_mbuf.h>
 
 #include "dns.h"
-#include "qname_table.h"
 #include "pcap.h"
 #include "common.h"
 #include "args.h"
@@ -57,6 +56,9 @@ do { \
 #define IP4_DNS_PACKET_MIN_LEN (IP4_MIN_PKT_LEN + sizeof(struct dns_hdr))
 #define IP6_DNS_PACKET_MIN_LEN (IP6_MIN_PKT_LEN + sizeof(struct dns_hdr))
 #define MBUF_HAS_MIN_DNS_LEN(m) ( (rte_be_to_cpu_16(rte_pktmbuf_mtod(m, struct ether_hdr *)->ether_type) == ETHER_TYPE_IPv4 && (m)->pkt_len >= IP4_DNS_PACKET_MIN_LEN) || (rte_be_to_cpu_16(rte_pktmbuf_mtod(m, struct ether_hdr *)->ether_type) == ETHER_TYPE_IPv6 && (m)->pkt_len >= IP6_DNS_PACKET_MIN_LEN))
+
+#define ETHER_FRAME_MIN_LEN 64
+#define ETHER_FRAME_L1_EXTRA_BYTES 24
 
 static void send_ack(struct rte_mbuf *m, unsigned portid, struct app_config *app_config, bool fin);
 
@@ -124,13 +126,12 @@ void tcp4_open(unsigned portid, struct app_config *app_config) {
     // Process TCP checksum
     tcp->cksum = rte_ipv4_udptcp_cksum(ip, tcp);
 
-    // Send
-    struct rte_eth_dev_tx_buffer *buffer;
-
-    buffer = app_config->dpdk_config.tx_buffer[portid];
-    app_config->port_stats[portid].tx_bytes += syn_mbuf->data_len + 24; // L1 bytes
+    // Update counters
+    app_config->port_stats[portid].tx_bytes += ETHER_FRAME_MIN_LEN + ETHER_FRAME_L1_EXTRA_BYTES; // L1 rate
     app_config->port_stats[portid].tx_packets++;
-    rte_eth_tx_buffer(portid, 0, buffer, syn_mbuf);
+
+    // Send
+    rte_eth_tx_buffer(portid, 0, app_config->dpdk_config.tx_buffer[portid], syn_mbuf);
 }
 
 // Open new IPv6 TCP connection
@@ -188,13 +189,12 @@ void tcp6_open(unsigned portid, struct app_config *app_config) {
     // Process TCP checksum
     tcp->cksum = rte_ipv6_udptcp_cksum(ip, tcp);
 
-    // Send
-    struct rte_eth_dev_tx_buffer *buffer;
-
-    buffer = app_config->dpdk_config.tx_buffer[portid];
-    app_config->port_stats[portid].tx_bytes += syn_mbuf->data_len + 24; // L1 bytes
+    // Update counters
+    app_config->port_stats[portid].tx_bytes += syn_mbuf->data_len + ETHER_FRAME_L1_EXTRA_BYTES; // L1 rate
     app_config->port_stats[portid].tx_packets++;
-    rte_eth_tx_buffer(portid, 0, buffer, syn_mbuf);
+
+    // Send
+    rte_eth_tx_buffer(portid, 0, app_config->dpdk_config.tx_buffer[portid], syn_mbuf);
 }
 
 static void send_ack(struct rte_mbuf *m, unsigned portid, struct app_config *app_config, bool fin) {
@@ -271,21 +271,19 @@ static void send_ack(struct rte_mbuf *m, unsigned portid, struct app_config *app
     tcp_hdr->data_off = 0x50; // 20 byte (5 * 4) header
     tcp_hdr->cksum = 0;
 
-    // Update cksums
+    // Update cksums and counters
+    app_config->port_stats[portid].tx_packets++;
     if (ether_type == ETHER_TYPE_IPv4) {
         ip4_hdr->hdr_checksum = rte_ipv4_cksum(ip4_hdr);
         tcp_hdr->cksum = rte_ipv4_udptcp_cksum(ip4_hdr, tcp_hdr);
+        app_config->port_stats[portid].tx_bytes += ETHER_FRAME_MIN_LEN + ETHER_FRAME_L1_EXTRA_BYTES;
     } else {
         tcp_hdr->cksum = rte_ipv6_udptcp_cksum(ip6_hdr, tcp_hdr);
+        app_config->port_stats[portid].tx_bytes += m->data_len + ETHER_FRAME_L1_EXTRA_BYTES;
     }
 
     // Send
-    struct rte_eth_dev_tx_buffer *buffer;
-
-    buffer = app_config->dpdk_config.tx_buffer[portid];
-    app_config->port_stats[portid].tx_bytes += m->data_len;
-    app_config->port_stats[portid].tx_packets++;
-    rte_eth_tx_buffer(portid, 0, buffer, m);
+    rte_eth_tx_buffer(portid, 0, app_config->dpdk_config.tx_buffer[portid], m);
 }
 
 // FIXME: split app_config and stats
@@ -333,61 +331,13 @@ static void generate_query_pcap(struct rte_mbuf *m, unsigned portid, struct app_
         tcp_hdr->cksum = rte_ipv6_udptcp_cksum(ip6_hdr, tcp_hdr);
     }
 
-    // Send
-    struct rte_eth_dev_tx_buffer *tx_buffer = app_config->dpdk_config.tx_buffer[portid];
-    app_config->port_stats[portid].tx_bytes += m->data_len;
+    app_config->port_stats[portid].tx_bytes += m->data_len + ETHER_FRAME_L1_EXTRA_BYTES;
     app_config->port_stats[portid].tx_packets++;
     app_config->port_stats[portid].tx_queries++;
-    rte_eth_tx_buffer(portid, 0, tx_buffer, m);
-}
 
-//void generate_query(struct rte_mbuf *m, unsigned portid) {
-//    // Select random QNAME from table
-//    uint32_t qname_index = rte_rand() % qname_table.records;
-//    uint8_t qname_bytes = qname_table.data[qname_index].qname_bytes;
-//
-//    // Pointers to headers
-//    struct ipv4_hdr *ip = mbuf_ip4_ptr(m);
-//    struct tcp_hdr *tcp = mbuf_tcp_ptr(m);
-//    struct dns_hdr *dns_hdr = mbuf_dns_header_ptr(m);
-//    uint8_t *qname_ptr = mbuf_dns_qname_ptr(m);
-//    struct dns_query_flags *dns_query_flags = (struct dns_query_flags *) (qname_ptr + qname_bytes);
-//
-//    m->pkt_len = m->data_len = DNS_PACKET_MIN_LEN + qname_bytes + sizeof(struct dns_query_flags);
-//
-//    ip->total_length = rte_cpu_to_be_16(m->data_len - sizeof(struct ether_hdr));
-//    ip->hdr_checksum = 0;
-//
-//    tcp->tcp_flags = 0x18; // ACK + PSH
-//    tcp->cksum = 0;
-//
-//    dns_hdr->len = rte_cpu_to_be_16(
-//            sizeof(struct dns_hdr) + qname_bytes + sizeof(struct dns_query_flags) - 2); // Length bytes not counted
-//    dns_hdr->tx_id = rte_rand();
-//    dns_hdr->flags = 0;
-//    dns_hdr->q_cnt = rte_cpu_to_be_16(1);
-//    dns_hdr->an_cnt = 0;
-//    dns_hdr->auth_cnt = 0;
-//    dns_hdr->additional_cnt = 0;
-//
-//    memcpy(qname_ptr, qname_table.data[qname_index].qname, qname_bytes);
-//
-//    dns_query_flags->qtype = rte_cpu_to_be_16(DNS_QTYPE_A);
-//    dns_query_flags->qclass = rte_cpu_to_be_16(DNS_QCLASS_IN);
-//
-//    // Update cksums
-//    ip->hdr_checksum = rte_ipv4_cksum(ip);
-//    tcp->cksum = rte_ipv4_udptcp_cksum(ip, tcp);
-//
-//    // Send
-//    struct rte_eth_dev_tx_buffer *buffer;
-//
-//    buffer = tx_buffer[portid];
-//    rte_eth_tx_buffer(portid, 0, buffer, m);
-//    port_stats[portid].tx_bytes += m->data_len;
-//    port_stats[portid].tx_packets++;
-//    port_stats[portid].tx_queries++;
-//}
+    // Send
+    rte_eth_tx_buffer(portid, 0, app_config->dpdk_config.tx_buffer[portid], m);
+}
 
 static struct rte_mbuf *mbuf_clone(struct rte_mbuf *m, const struct app_config *app_config) {
     struct rte_mbuf *clone = rte_pktmbuf_alloc(app_config->dpdk_config.pktmbuf_pool);
