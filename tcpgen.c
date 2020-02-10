@@ -48,9 +48,16 @@ static struct dpdk_config dpdk_default_config = {
         .port_conf = {
                 .rxmode = {
                         .split_hdr_size = 0,
+                        .mq_mode = ETH_MQ_RX_RSS,
                 },
                 .txmode = {
                         .mq_mode = ETH_MQ_TX_NONE,
+                },
+                .rx_adv_conf = {
+                        .rss_conf = {
+                                .rss_key = NULL,
+                                .rss_hf = ETH_RSS_UDP | ETH_RSS_TCP,
+                        },
                 },
         },
         .pktmbuf_pool = NULL,
