@@ -52,6 +52,7 @@
 struct lcore_queue_conf {
     unsigned n_port;
     unsigned port_list[MAX_RX_QUEUE_PER_LCORE];
+    uint16_t port_queue[MAX_RX_QUEUE_PER_LCORE];
 } __rte_cache_aligned;
 
 struct app_config;

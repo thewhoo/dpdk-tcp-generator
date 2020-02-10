@@ -83,6 +83,7 @@ static void tcpgen_main_loop(struct app_config *app_config) {
 
     lcore_id = rte_lcore_id();
     qconf = &app_config->dpdk_config.lcore_queue_conf[lcore_id];
+    uint16_t queue_id;
 
     if (qconf->n_port == 0) {
         RTE_LOG(INFO, TCPGEN, "lcore %u has nothing to do\n", lcore_id);
@@ -94,8 +95,9 @@ static void tcpgen_main_loop(struct app_config *app_config) {
     for (i = 0; i < qconf->n_port; i++) {
 
         portid = qconf->port_list[i];
-        RTE_LOG(INFO, TCPGEN, " -- lcoreid=%u portid=%u\n", lcore_id,
-                portid);
+        queue_id = qconf->port_queue[i];
+        RTE_LOG(INFO, TCPGEN, " -- lcoreid=%u portid=%u queueid=%d\n", lcore_id,
+                portid, queue_id);
 
     }
 
@@ -113,8 +115,9 @@ static void tcpgen_main_loop(struct app_config *app_config) {
         if (unlikely(diff_tsc > drain_tsc)) {
             for (i = 0; i < qconf->n_port; i++) {
                 portid = qconf->port_list[i];
+                queue_id = qconf->port_queue[i];
                 buffer = app_config->dpdk_config.tx_buffer[portid];
-                rte_eth_tx_buffer_flush(portid, 0, buffer);
+                rte_eth_tx_buffer_flush(portid, queue_id, buffer);
             }
             prev_tsc = cur_tsc;
         }
@@ -123,17 +126,18 @@ static void tcpgen_main_loop(struct app_config *app_config) {
         tx_diff = cur_tsc - tx_tsc;
         for (i = 0; i < qconf->n_port; i++) {
             portid = qconf->port_list[i];
+            queue_id = qconf->port_queue[i];
 
             if (tx_diff > app_config->user_config.tx_tsc_period) {
                 if (wyrand() < app_config->ipv6_probability)
                     tcp6_open(portid, queue_id, app_config);
                 else
-                    tcp4_open(portid, app_config);
+                    tcp4_open(portid, queue_id, app_config);
 
                 tx_tsc = cur_tsc;
             }
 
-            nb_rx = rte_eth_rx_burst(portid, 0,
+            nb_rx = rte_eth_rx_burst(portid, queue_id,
                                      pkts_burst, MAX_PKT_BURST);
 
             app_config->port_stats[portid].rx_packets += nb_rx;
@@ -141,15 +145,16 @@ static void tcpgen_main_loop(struct app_config *app_config) {
             for (j = 0; j < nb_rx; j++) {
                 m = pkts_burst[j];
                 rte_prefetch0(rte_pktmbuf_mtod(m, void *));
-                handle_incoming(m, portid, app_config);
+                handle_incoming(m, portid, queue_id, app_config);
             }
         }
     }
 
     for (i = 0; i < qconf->n_port; i++) {
         portid = qconf->port_list[i];
+        queue_id = qconf->port_queue[i];
         buffer = app_config->dpdk_config.tx_buffer[portid];
-        rte_eth_tx_buffer_flush(portid, 0, buffer);
+        rte_eth_tx_buffer_flush(portid, queue_id, buffer);
     }
 
     stop_tsc = rte_rdtsc();
@@ -321,24 +326,21 @@ int main(int argc, char **argv) {
 
         nb_ports_in_mask++;
 
-        // get the lcore_id for this port
-        while (rte_lcore_is_enabled(rx_lcore_id) == 0 ||
-               app_config.dpdk_config.lcore_queue_conf[rx_lcore_id].n_port ==
-               app_config.dpdk_config.rx_queue_per_lcore) {
-            rx_lcore_id++;
-            if (rx_lcore_id >= RTE_MAX_LCORE)
-                rte_exit(EXIT_FAILURE, "Not enough cores\n");
-        }
+        uint16_t queue = 0;
 
-        if (qconf != &app_config.dpdk_config.lcore_queue_conf[rx_lcore_id]) {
-            // Assigned a new logical core in the loop above
-            qconf = &app_config.dpdk_config.lcore_queue_conf[rx_lcore_id];
-            nb_lcores++;
-        }
+        // Assign port queues to all enables lcores
+        RTE_LCORE_FOREACH(lcore_id) {
+            qconf = &app_config.dpdk_config.lcore_queue_conf[lcore_id];
+            if(rte_lcore_is_enabled(lcore_id) && qconf->n_port < app_config.dpdk_config.rx_queue_per_lcore) {
+                qconf->port_list[qconf->n_port] = portid;
+                qconf->port_queue[qconf->n_port] = queue;
 
-        qconf->port_list[qconf->n_port] = portid;
-        qconf->n_port++;
-        printf("Lcore %u: RX port %u\n", rx_lcore_id, portid);
+                queue++;
+                qconf->n_port++;
+
+                RTE_LOG(INFO, TCPGEN, "assigned port %u to lcore %u\n", portid, lcore_id);
+            }
+        }
     }
 
     // Initialise each port
@@ -360,7 +362,7 @@ int main(int argc, char **argv) {
         if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
             local_port_conf.txmode.offloads |=
                     DEV_TX_OFFLOAD_MBUF_FAST_FREE;
-        ret = rte_eth_dev_configure(portid, 1, 1, &local_port_conf);
+        ret = rte_eth_dev_configure(portid, rte_lcore_count(), rte_lcore_count(), &local_port_conf);
         if (ret < 0)
             rte_exit(EXIT_FAILURE, "Cannot configure device: err=%d, port=%u\n",
                      ret, portid);
@@ -372,27 +374,34 @@ int main(int argc, char **argv) {
                      "Cannot adjust number of descriptors: err=%d, port=%u\n",
                      ret, portid);
 
+
         fflush(stdout);
         rxq_conf = dev_info.default_rxconf;
         rxq_conf.offloads = local_port_conf.rxmode.offloads;
-        ret = rte_eth_rx_queue_setup(portid, 0, app_config.dpdk_config.nb_rxd,
-                                     rte_eth_dev_socket_id(portid),
-                                     &rxq_conf,
-                                     app_config.dpdk_config.pktmbuf_pool);
-        if (ret < 0)
-            rte_exit(EXIT_FAILURE, "rte_eth_rx_queue_setup:err=%d, port=%u\n",
-                     ret, portid);
+        RTE_LCORE_FOREACH(lcore_id) {
+            uint16_t queue_id = rte_lcore_index(lcore_id);
+            ret = rte_eth_rx_queue_setup(portid, queue_id, app_config.dpdk_config.nb_rxd,
+                                         rte_eth_dev_socket_id(portid),
+                                         &rxq_conf,
+                                         app_config.dpdk_config.pktmbuf_pool);
+            if (ret < 0)
+                rte_exit(EXIT_FAILURE, "rte_eth_rx_queue_setup:err=%d, port=%u, queue=%u\n",
+                         ret, portid, queue_id);
+        }
 
         // init one TX queue on each port
         fflush(stdout);
         txq_conf = dev_info.default_txconf;
         txq_conf.offloads = local_port_conf.txmode.offloads;
-        ret = rte_eth_tx_queue_setup(portid, 0, app_config.dpdk_config.nb_txd,
-                                     rte_eth_dev_socket_id(portid),
-                                     &txq_conf);
-        if (ret < 0)
-            rte_exit(EXIT_FAILURE, "rte_eth_tx_queue_setup:err=%d, port=%u\n",
-                     ret, portid);
+        RTE_LCORE_FOREACH(lcore_id) {
+            uint16_t queue_id = rte_lcore_index(lcore_id);
+            ret = rte_eth_tx_queue_setup(portid, queue_id, app_config.dpdk_config.nb_txd,
+                                         rte_eth_dev_socket_id(portid),
+                                         &txq_conf);
+            if (ret < 0)
+                rte_exit(EXIT_FAILURE, "rte_eth_tx_queue_setup:err=%d, port=%u, queue=%u\n",
+                         ret, portid, queue_id);
+        }
 
         // Initialize TX buffers
         app_config.dpdk_config.tx_buffer[portid] = rte_zmalloc_socket("tx_buffer",
@@ -432,6 +441,7 @@ int main(int argc, char **argv) {
 
     check_all_ports_link_status(app_config.user_config.enabled_port_mask);
 
+    uint64_t start_tsc = rte_rdtsc();
     ret = 0;
     // launch per-lcore init on every lcore
     rte_eal_mp_remote_launch((lcore_function_t *) tcpgen_launch_one_lcore, &app_config, CALL_MASTER);

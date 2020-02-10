@@ -58,16 +58,16 @@ do { \
 #define ETHER_FRAME_MIN_LEN 60
 #define ETHER_FRAME_L1_EXTRA_BYTES 24
 
-static void send_ack(struct rte_mbuf *m, unsigned portid, struct app_config *app_config, bool fin);
+static void send_ack(struct rte_mbuf *m, unsigned portid, uint16_t queue_id, struct app_config *app_config, bool fin);
 
-static void generate_query_pcap(struct rte_mbuf *m, unsigned portid, struct app_config *app_config);
+static void generate_query_pcap(struct rte_mbuf *m, unsigned portid, uint16_t queue_id, struct app_config *app_config);
 
 static struct rte_mbuf *mbuf_clone(struct rte_mbuf *m, const struct app_config *app_config);
 
 static void response_classify(struct rte_mbuf *m, unsigned portid, struct app_config *app_config);
 
 // Open new IPv4 TCP connection
-void tcp4_open(unsigned portid, struct app_config *app_config) {
+void tcp4_open(unsigned portid, uint16_t queue_id, struct app_config *app_config) {
 
     uint16_t src_port = wyrand();
     uint32_t src_ip_rand_bits;
@@ -133,7 +133,7 @@ void tcp4_open(unsigned portid, struct app_config *app_config) {
 }
 
 // Open new IPv6 TCP connection
-void tcp6_open(unsigned portid, struct app_config *app_config) {
+void tcp6_open(unsigned portid, uint16_t queue_id, struct app_config *app_config) {
 
     uint16_t src_port = wyrand();
 
@@ -188,14 +188,14 @@ void tcp6_open(unsigned portid, struct app_config *app_config) {
     tcp->cksum = rte_ipv6_udptcp_cksum(ip, tcp);
 
     // Update counters
-    app_config->port_stats[portid].tx_bytes += syn_mbuf->data_len + ETHER_FRAME_L1_EXTRA_BYTES; // L1 rate
-    app_config->port_stats[portid].tx_packets++;
+    app_config->lcore_stats[rte_lcore_id()].tx_bytes += syn_mbuf->data_len + ETHER_FRAME_L1_EXTRA_BYTES; // L1 rate
+    app_config->lcore_stats[rte_lcore_id()].tx_packets++;
 
     // Send
     rte_eth_tx_burst(portid, queue_id, &syn_mbuf, 1);
 }
 
-static void send_ack(struct rte_mbuf *m, unsigned portid, struct app_config *app_config, bool fin) {
+static void send_ack(struct rte_mbuf *m, unsigned portid, uint16_t queue_id, struct app_config *app_config, bool fin) {
     // Pointers to headers
     struct ether_hdr *eth_hdr = mbuf_eth_ptr(m);
     struct ipv4_hdr *ip4_hdr = NULL;
@@ -281,14 +281,13 @@ static void send_ack(struct rte_mbuf *m, unsigned portid, struct app_config *app
     }
 
     // Send
-    rte_eth_tx_buffer(portid, 0, app_config->dpdk_config.tx_buffer[portid], m);
+    rte_eth_tx_burst(portid, queue_id, &m, 1);
 }
 
-// FIXME: split app_config and stats
-static void generate_query_pcap(struct rte_mbuf *m, unsigned portid, struct app_config *app_config) {
+static void generate_query_pcap(struct rte_mbuf *m, unsigned portid, uint16_t queue_id, struct app_config *app_config) {
     unsigned lcore_id = rte_lcore_id();
 
-    struct pcap_list_entry *ref_pcap = pcap_list_get(&app_config->pcap_lists[lcore_id]);
+    const struct pcap_list_entry *ref_pcap = pcap_list_get(&app_config->pcap_lists[lcore_id]);
     // Move forward in PCAP list
     pcap_list_next(&app_config->pcap_lists[lcore_id]);
 
@@ -368,7 +367,7 @@ static void response_classify(struct rte_mbuf *m, unsigned portid, struct app_co
 }
 
 // Incoming packet handler
-void handle_incoming(struct rte_mbuf *m, unsigned portid, struct app_config *app_config) {
+void handle_incoming(struct rte_mbuf *m, unsigned portid, uint16_t queue_id, struct app_config *app_config) {
 
     app_config->port_stats[portid].rx_bytes += m->pkt_len;
 
@@ -411,20 +410,20 @@ void handle_incoming(struct rte_mbuf *m, unsigned portid, struct app_config *app
     // If this is a SYN-ACK, generate ACK and DNS query
     if ((tcp_hdr->tcp_flags & 0x12) == 0x12) {
         rte_mbuf_refcnt_update(m, 1); // Keep mbuf for cloning into query
-        send_ack(m, portid, app_config, false);
+        send_ack(m, portid, queue_id, app_config, false);
         struct rte_mbuf *m_clone = mbuf_clone(m, app_config);
         rte_mbuf_refcnt_update(m, -1);
-        generate_query_pcap(m_clone, portid, app_config);
+        generate_query_pcap(m_clone, portid, queue_id, app_config);
     }
         // Generate ACK if SYN or FIN is set
     else if (tcp_hdr->tcp_flags & 0x03) {
-        send_ack(m, portid, app_config, false);
+        send_ack(m, portid, queue_id, app_config, false);
     }
         // Handle DNS query response
     else if (MBUF_HAS_MIN_DNS_LEN(m)) {
         app_config->port_stats[portid].rx_responses++;
         rte_mbuf_refcnt_update(m, 1); // Keep mbuf for RCODE classification
-        send_ack(m, portid, app_config, true);
+        send_ack(m, portid, queue_id, app_config, true);
         response_classify(m, portid, app_config);
         rte_mbuf_refcnt_update(m, -1);
     } else {
