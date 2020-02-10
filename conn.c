@@ -55,7 +55,7 @@ do { \
 #define IP6_DNS_PACKET_MIN_LEN (IP6_MIN_PKT_LEN + sizeof(struct dns_hdr))
 #define MBUF_HAS_MIN_DNS_LEN(m) ( (rte_be_to_cpu_16(rte_pktmbuf_mtod(m, struct ether_hdr *)->ether_type) == ETHER_TYPE_IPv4 && (m)->pkt_len >= IP4_DNS_PACKET_MIN_LEN) || (rte_be_to_cpu_16(rte_pktmbuf_mtod(m, struct ether_hdr *)->ether_type) == ETHER_TYPE_IPv6 && (m)->pkt_len >= IP6_DNS_PACKET_MIN_LEN))
 
-#define ETHER_FRAME_MIN_LEN 64
+#define ETHER_FRAME_MIN_LEN 60
 #define ETHER_FRAME_L1_EXTRA_BYTES 24
 
 static void send_ack(struct rte_mbuf *m, unsigned portid, struct app_config *app_config, bool fin);
