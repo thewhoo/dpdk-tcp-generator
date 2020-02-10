@@ -13,7 +13,7 @@
 
 struct app_config;
 
-struct port_stats {
+struct lcore_stats {
     // Total TX packet count
     uint64_t tx_packets;
     // Total TX byte count
@@ -33,7 +33,7 @@ struct port_stats {
     uint64_t rx_rcode[DNS_RCODE_MAX_TYPES];
 } __rte_cache_aligned;
 
-void print_all_stats(const struct app_config *app_config, unsigned lcore_id, uint64_t runtime_tsc);
+void print_all_stats(const struct app_config *app_config, uint64_t runtime_tsc);
 void write_json_stats(const struct app_config *app_config, unsigned lcore_id, uint64_t runtime_tsc);
 
 #endif //DPDK_TCP_GENERATOR_STATS_H

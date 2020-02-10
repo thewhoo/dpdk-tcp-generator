@@ -112,7 +112,7 @@ struct user_config {
 struct app_config {
     struct dpdk_config dpdk_config;
 
-    struct port_stats port_stats[RTE_MAX_ETHPORTS];
+    struct lcore_stats lcore_stats[RTE_MAX_LCORE];
 
     struct user_config user_config;
 

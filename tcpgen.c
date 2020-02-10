@@ -140,7 +140,7 @@ static void tcpgen_main_loop(struct app_config *app_config) {
             nb_rx = rte_eth_rx_burst(portid, queue_id,
                                      pkts_burst, MAX_PKT_BURST);
 
-            app_config->port_stats[portid].rx_packets += nb_rx;
+            app_config->lcore_stats[lcore_id].rx_packets += nb_rx;
 
             for (j = 0; j < nb_rx; j++) {
                 m = pkts_burst[j];
@@ -156,11 +156,6 @@ static void tcpgen_main_loop(struct app_config *app_config) {
         buffer = app_config->dpdk_config.tx_buffer[portid];
         rte_eth_tx_buffer_flush(portid, queue_id, buffer);
     }
-
-    stop_tsc = rte_rdtsc();
-    uint64_t runtime_tsc = stop_tsc - start_tsc;
-    print_all_stats(app_config, lcore_id, runtime_tsc);
-    write_json_stats(app_config, lcore_id, runtime_tsc);
 }
 
 static int tcpgen_launch_one_lcore(struct app_config *app_config) {
@@ -315,6 +310,9 @@ int main(int argc, char **argv) {
         app_config.ipv6_probability = app_config.pcap_ipv6_probability;
     }
 
+    // Initialize stats
+    memset(app_config.lcore_stats, 0, sizeof(app_config.lcore_stats));
+
     rx_lcore_id = 0;
     qconf = NULL;
 
@@ -415,7 +413,7 @@ int main(int argc, char **argv) {
 
         ret = rte_eth_tx_buffer_set_err_callback(app_config.dpdk_config.tx_buffer[portid],
                                                  rte_eth_tx_buffer_count_callback,
-                                                 &app_config.port_stats[portid].tx_dropped);
+                                                 &app_config.lcore_stats[0].tx_dropped);
         if (ret < 0)
             rte_exit(EXIT_FAILURE,
                      "Cannot set error callback for tx buffer on port %u\n",
@@ -429,9 +427,6 @@ int main(int argc, char **argv) {
         printf("done: \n");
 
         rte_eth_promiscuous_enable(portid);
-
-        // initialize port stats
-        memset(&app_config.port_stats[portid], 0, sizeof(struct port_stats));
     }
 
     if (!nb_ports_available) {
@@ -451,6 +446,9 @@ int main(int argc, char **argv) {
             break;
         }
     }
+    uint64_t stop_tsc = rte_rdtsc();
+    uint64_t runtime_tsc = stop_tsc - start_tsc;
+    print_all_stats(&app_config, runtime_tsc);
 
     RTE_ETH_FOREACH_DEV(portid) {
         if ((app_config.user_config.enabled_port_mask & (1 << portid)) == 0)

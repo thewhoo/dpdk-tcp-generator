@@ -125,8 +125,8 @@ void tcp4_open(unsigned portid, uint16_t queue_id, struct app_config *app_config
     tcp->cksum = rte_ipv4_udptcp_cksum(ip, tcp);
 
     // Update counters
-    app_config->port_stats[portid].tx_bytes += ETHER_FRAME_MIN_LEN + ETHER_FRAME_L1_EXTRA_BYTES; // L1 rate
-    app_config->port_stats[portid].tx_packets++;
+    app_config->lcore_stats[rte_lcore_id()].tx_bytes += ETHER_FRAME_MIN_LEN + ETHER_FRAME_L1_EXTRA_BYTES; // L1 rate
+    app_config->lcore_stats[rte_lcore_id()].tx_packets++;
 
     // Send
     rte_eth_tx_burst(portid, queue_id, &syn_mbuf, 1);
@@ -270,14 +270,14 @@ static void send_ack(struct rte_mbuf *m, unsigned portid, uint16_t queue_id, str
     tcp_hdr->cksum = 0;
 
     // Update cksums and counters
-    app_config->port_stats[portid].tx_packets++;
+    app_config->lcore_stats[rte_lcore_id()].tx_packets++;
     if (ether_type == ETHER_TYPE_IPv4) {
         ip4_hdr->hdr_checksum = rte_ipv4_cksum(ip4_hdr);
         tcp_hdr->cksum = rte_ipv4_udptcp_cksum(ip4_hdr, tcp_hdr);
-        app_config->port_stats[portid].tx_bytes += ETHER_FRAME_MIN_LEN + ETHER_FRAME_L1_EXTRA_BYTES;
+        app_config->lcore_stats[rte_lcore_id()].tx_bytes += ETHER_FRAME_MIN_LEN + ETHER_FRAME_L1_EXTRA_BYTES;
     } else {
         tcp_hdr->cksum = rte_ipv6_udptcp_cksum(ip6_hdr, tcp_hdr);
-        app_config->port_stats[portid].tx_bytes += m->data_len + ETHER_FRAME_L1_EXTRA_BYTES;
+        app_config->lcore_stats[rte_lcore_id()].tx_bytes += m->data_len + ETHER_FRAME_L1_EXTRA_BYTES;
     }
 
     // Send
@@ -330,9 +330,9 @@ static void generate_query_pcap(struct rte_mbuf *m, unsigned portid, uint16_t qu
         tcp_hdr->cksum = rte_ipv6_udptcp_cksum(ip6_hdr, tcp_hdr);
     }
 
-    app_config->port_stats[portid].tx_bytes += m->data_len + ETHER_FRAME_L1_EXTRA_BYTES;
-    app_config->port_stats[portid].tx_packets++;
-    app_config->port_stats[portid].tx_queries++;
+    app_config->lcore_stats[rte_lcore_id()].tx_bytes += m->data_len + ETHER_FRAME_L1_EXTRA_BYTES;
+    app_config->lcore_stats[rte_lcore_id()].tx_packets++;
+    app_config->lcore_stats[rte_lcore_id()].tx_queries++;
 
     // Send
     rte_eth_tx_burst(portid, queue_id, &m, 1);
@@ -363,13 +363,13 @@ static void response_classify(struct rte_mbuf *m, unsigned portid, struct app_co
     }
 
     uint8_t rcode = rte_be_to_cpu_16(dns_hdr->flags) & 0xf;
-    app_config->port_stats[portid].rx_rcode[rcode]++;
+    app_config->lcore_stats[rte_lcore_id()].rx_rcode[rcode]++;
 }
 
 // Incoming packet handler
 void handle_incoming(struct rte_mbuf *m, unsigned portid, uint16_t queue_id, struct app_config *app_config) {
 
-    app_config->port_stats[portid].rx_bytes += m->pkt_len;
+    app_config->lcore_stats[rte_lcore_id()].rx_bytes += m->pkt_len;
 
     if (m->pkt_len < MIN_PKT_LEN) {
         rte_pktmbuf_free(m);
@@ -421,7 +421,7 @@ void handle_incoming(struct rte_mbuf *m, unsigned portid, uint16_t queue_id, str
     }
         // Handle DNS query response
     else if (MBUF_HAS_MIN_DNS_LEN(m)) {
-        app_config->port_stats[portid].rx_responses++;
+        app_config->lcore_stats[rte_lcore_id()].rx_responses++;
         rte_mbuf_refcnt_update(m, 1); // Keep mbuf for RCODE classification
         send_ack(m, portid, queue_id, app_config, true);
         response_classify(m, portid, app_config);
