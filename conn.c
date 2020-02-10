@@ -17,7 +17,6 @@
 #include <rte_log.h>
 #include <rte_memcpy.h>
 #include <rte_branch_prediction.h>
-#include <rte_random.h>
 #include <rte_ether.h>
 #include <rte_ethdev.h>
 #include <rte_mbuf.h>
@@ -25,8 +24,7 @@
 #include "dns.h"
 #include "pcap.h"
 #include "common.h"
-#include "args.h"
-#include "conn.h"
+#include "wyrand.h"
 
 #define MAC_ADDR_XOR(addr1, addr2) \
 do { \
@@ -71,11 +69,11 @@ static void response_classify(struct rte_mbuf *m, unsigned portid, struct app_co
 // Open new IPv4 TCP connection
 void tcp4_open(unsigned portid, struct app_config *app_config) {
 
-    uint16_t src_port = rte_rand();
+    uint16_t src_port = wyrand();
     uint32_t src_ip_rand_bits;
 
     do {
-        src_ip_rand_bits = rte_rand() & app_config->user_config.ip4_src_rand_bit_mask;
+        src_ip_rand_bits = wyrand() & app_config->user_config.ip4_src_rand_bit_mask;
     } while (unlikely(
             src_ip_rand_bits == 0 ||
             src_ip_rand_bits == app_config->user_config.ip4_src_rand_bit_mask)); // No net and broadcast addrs
@@ -137,12 +135,12 @@ void tcp4_open(unsigned portid, struct app_config *app_config) {
 // Open new IPv6 TCP connection
 void tcp6_open(unsigned portid, struct app_config *app_config) {
 
-    uint16_t src_port = rte_rand();
+    uint16_t src_port = wyrand();
 
     uint64_t src_ip_rand_bits[2];
     do {
-        src_ip_rand_bits[0] = rte_rand() & app_config->user_config.ip6_src_rand_bit_mask[0];
-        src_ip_rand_bits[1] = rte_rand() & app_config->user_config.ip6_src_rand_bit_mask[1];
+        src_ip_rand_bits[0] = wyrand() & app_config->user_config.ip6_src_rand_bit_mask[0];
+        src_ip_rand_bits[1] = wyrand() & app_config->user_config.ip6_src_rand_bit_mask[1];
     } while (unlikely(
             memcmp(src_ip_rand_bits, app_config->user_config.ip6_src_rand_bit_mask, IPv6_ADDR_LEN) == 0 ||
             (src_ip_rand_bits[0] == 0 && src_ip_rand_bits[1] == 0))); // No net and broadcast addrs

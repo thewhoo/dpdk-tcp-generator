@@ -23,7 +23,6 @@
 #include <rte_prefetch.h>
 #include <rte_lcore.h>
 #include <rte_branch_prediction.h>
-#include <rte_random.h>
 #include <rte_ethdev.h>
 #include <rte_mbuf.h>
 
@@ -33,6 +32,7 @@
 #include "conn.h"
 #include "config.h"
 #include "stats.h"
+#include "wyrand.h"
 
 #define RTE_TEST_RX_DESC_DEFAULT 1024
 #define RTE_TEST_TX_DESC_DEFAULT 1024
@@ -125,8 +125,8 @@ static void tcpgen_main_loop(struct app_config *app_config) {
             portid = qconf->port_list[i];
 
             if (tx_diff > app_config->user_config.tx_tsc_period) {
-                if (rte_rand() < app_config->ipv6_probability)
-                    tcp6_open(portid, app_config);
+                if (wyrand() < app_config->ipv6_probability)
+                    tcp6_open(portid, queue_id, app_config);
                 else
                     tcp4_open(portid, app_config);
 
@@ -275,6 +275,9 @@ int main(int argc, char **argv) {
     if (app_config.dpdk_config.pktmbuf_pool == NULL)
         rte_exit(EXIT_FAILURE, "Cannot init mbuf pool\n");
 
+
+    // Initialize wyrand
+    wyrand_seed();
 
     // Initialize helper structures
     pcap_list_init_all(app_config.pcap_lists);
