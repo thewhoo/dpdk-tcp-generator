@@ -87,7 +87,6 @@ struct user_config {
     uint64_t tsc_runtime;
 
     const char *config_file;
-    const char *qname_file;
     const char *pcap_file;
     const char *result_file;
 
