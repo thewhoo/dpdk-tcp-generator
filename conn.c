@@ -129,7 +129,7 @@ void tcp4_open(unsigned portid, struct app_config *app_config) {
     app_config->port_stats[portid].tx_packets++;
 
     // Send
-    rte_eth_tx_buffer(portid, 0, app_config->dpdk_config.tx_buffer[portid], syn_mbuf);
+    rte_eth_tx_burst(portid, queue_id, &syn_mbuf, 1);
 }
 
 // Open new IPv6 TCP connection
@@ -192,7 +192,7 @@ void tcp6_open(unsigned portid, struct app_config *app_config) {
     app_config->port_stats[portid].tx_packets++;
 
     // Send
-    rte_eth_tx_buffer(portid, 0, app_config->dpdk_config.tx_buffer[portid], syn_mbuf);
+    rte_eth_tx_burst(portid, queue_id, &syn_mbuf, 1);
 }
 
 static void send_ack(struct rte_mbuf *m, unsigned portid, struct app_config *app_config, bool fin) {
@@ -336,7 +336,7 @@ static void generate_query_pcap(struct rte_mbuf *m, unsigned portid, struct app_
     app_config->port_stats[portid].tx_queries++;
 
     // Send
-    rte_eth_tx_buffer(portid, 0, app_config->dpdk_config.tx_buffer[portid], m);
+    rte_eth_tx_burst(portid, queue_id, &m, 1);
 }
 
 static struct rte_mbuf *mbuf_clone(struct rte_mbuf *m, const struct app_config *app_config) {
