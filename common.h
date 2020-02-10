@@ -49,6 +49,10 @@
 
 #define MAX_RX_QUEUE_PER_LCORE 16
 #define MAX_TX_QUEUE_PER_PORT 16
+
+// Global quit flag
+volatile uint8_t tcpgen_force_quit;
+
 struct lcore_queue_conf {
     unsigned n_port;
     unsigned port_list[MAX_RX_QUEUE_PER_LCORE];
@@ -113,6 +117,7 @@ struct app_config {
     struct dpdk_config dpdk_config;
 
     struct lcore_stats lcore_stats[RTE_MAX_LCORE];
+    struct port_stats port_stats[RTE_MAX_ETHPORTS];
 
     struct user_config user_config;
 

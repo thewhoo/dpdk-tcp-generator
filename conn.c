@@ -5,8 +5,6 @@
  * Author: Matej Postolka <xposto02@stud.fit.vutbr.cz>
  */
 
-// TODO prune and cleanup
-
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -25,6 +23,7 @@
 #include "pcap.h"
 #include "common.h"
 #include "wyrand.h"
+#include "conn.h"
 
 #define MAC_ADDR_XOR(addr1, addr2) \
 do { \
@@ -64,7 +63,7 @@ static void generate_query_pcap(struct rte_mbuf *m, unsigned portid, uint16_t qu
 
 static struct rte_mbuf *mbuf_clone(struct rte_mbuf *m, const struct app_config *app_config);
 
-static void response_classify(struct rte_mbuf *m, unsigned portid, struct app_config *app_config);
+static void response_classify(struct rte_mbuf *m, struct app_config *app_config);
 
 // Open new IPv4 TCP connection
 void tcp4_open(unsigned portid, uint16_t queue_id, struct app_config *app_config) {
@@ -349,7 +348,7 @@ static struct rte_mbuf *mbuf_clone(struct rte_mbuf *m, const struct app_config *
     return clone;
 }
 
-static void response_classify(struct rte_mbuf *m, unsigned portid, struct app_config *app_config) {
+static void response_classify(struct rte_mbuf *m, struct app_config *app_config) {
     struct ether_hdr *eth_hdr = mbuf_eth_ptr(m);
     struct dns_hdr *dns_hdr = NULL;
 
@@ -424,7 +423,7 @@ void handle_incoming(struct rte_mbuf *m, unsigned portid, uint16_t queue_id, str
         app_config->lcore_stats[rte_lcore_id()].rx_responses++;
         rte_mbuf_refcnt_update(m, 1); // Keep mbuf for RCODE classification
         send_ack(m, portid, queue_id, app_config, true);
-        response_classify(m, portid, app_config);
+        response_classify(m, app_config);
         rte_mbuf_refcnt_update(m, -1);
     } else {
         rte_pktmbuf_free(m);

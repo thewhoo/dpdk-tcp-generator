@@ -20,8 +20,6 @@ struct lcore_stats {
     uint64_t tx_bytes;
     // DNS query TX count
     uint64_t tx_queries;
-    // TX dropped count
-    uint64_t tx_dropped;
 
     // Total RX packet count
     uint64_t rx_packets;
@@ -31,6 +29,11 @@ struct lcore_stats {
     uint64_t rx_responses;
     // Per-RCode stats
     uint64_t rx_rcode[DNS_RCODE_MAX_TYPES];
+} __rte_cache_aligned;
+
+struct port_stats {
+    // TX dropped count
+    uint64_t tx_dropped;
 } __rte_cache_aligned;
 
 void print_all_stats(const struct app_config *app_config, uint64_t runtime_tsc);

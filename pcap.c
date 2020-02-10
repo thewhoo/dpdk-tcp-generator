@@ -22,6 +22,7 @@
 #define MAGIC_NSEC_TS 0xa1b23c4d
 
 static struct pcap_list_entry *pcap_list_insert(struct pcap_list *list, uint8_t *payload, uint32_t payload_len);
+static void pcap_list_init_all(struct pcap_list *pcap_lists);
 static void pcap_list_destroy(struct pcap_list *list);
 
 static struct pcap_list_entry *pcap_list_insert(struct pcap_list *list, uint8_t *payload, uint32_t payload_len)
@@ -58,7 +59,7 @@ struct pcap_list_entry *pcap_list_get(const struct pcap_list *list)
     return current;
 }
 
-void pcap_list_init_all(struct pcap_list *pcap_lists) {
+static void pcap_list_init_all(struct pcap_list *pcap_lists) {
     for(int i = 0; i < RTE_MAX_LCORE; i++) {
         pcap_lists[i].first = pcap_lists[i].current = pcap_lists[i].last = NULL;
     }
@@ -98,6 +99,8 @@ static void pcap_list_destroy(struct pcap_list *list)
 
 int pcap_parse(struct app_config *config)
 {
+    pcap_list_init_all(config->pcap_lists);
+
     FILE *fp = fopen(config->user_config.pcap_file, "r");
     if(fp == NULL) {
         RTE_LOG(ERR, TCPGEN, "pcap_parse: failed to open pcap file\n");
