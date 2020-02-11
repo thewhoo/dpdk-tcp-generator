@@ -19,9 +19,11 @@
 #define ARGS_REQUIRED (ARG_PORT_MASK | ARG_CONFIG_FILE | ARG_PCAP_FILE)
 #define ARGS_VALID(args) (((args) & ARGS_REQUIRED) == ARGS_REQUIRED)
 
-#define USEC_TO_TSC(usec) ((usec) * (rte_get_tsc_hz() / 1000000))
+#define NSEC_TO_TSC(nsec, cpu_freq) ((uint64_t)((cpu_freq) / (double)1e9 * (nsec)))
 
-static int tcpgen_parse_portmask(const char *portmask);
+static int parse_portmask(const char *portmask);
+
+static int parse_timestr(const char *timestr, uint64_t *nsec_val);
 
 static const char short_options[] =
         "p:"  // portmask
@@ -49,16 +51,17 @@ static const struct option long_options[] = {
 int tcpgen_parse_args(int argc, char **argv, struct user_config *config) {
     int opt, ret;
     int option_index;
-    char *endptr; // strtoul
     char **argvopt;
     char *prgname = argv[0];
+
+    uint64_t nsec_result;
 
     argvopt = argv;
 
     while ((opt = getopt_long(argc, argvopt, short_options, long_options, &option_index)) != EOF) {
         switch (opt) {
             case 'p':
-                config->enabled_port_mask = tcpgen_parse_portmask(optarg);
+                config->enabled_port_mask = parse_portmask(optarg);
                 if (config->enabled_port_mask == 0) {
                     RTE_LOG(ERR, TCPGEN, "args: invalid portmask\n");
                     return -1;
@@ -67,11 +70,11 @@ int tcpgen_parse_args(int argc, char **argv, struct user_config *config) {
                 break;
 
             case 'g':
-                config->tx_tsc_period = USEC_TO_TSC(strtoul(optarg, &endptr, 10));
-                if(*endptr != '\0') {
+                if (parse_timestr(optarg, &nsec_result) == -1) {
                     RTE_LOG(ERR, TCPGEN, "args: invalid tcp gap\n");
                     return -1;
                 }
+                config->tx_tsc_period = NSEC_TO_TSC(nsec_result, rte_get_tsc_hz());
                 config->supplied_args |= ARG_TSC_PERIOD;
                 break;
 
@@ -81,11 +84,11 @@ int tcpgen_parse_args(int argc, char **argv, struct user_config *config) {
                 break;
 
             case 'r':
-                config->tsc_runtime = USEC_TO_TSC((strtoul(optarg, &endptr, 10)));
-                if(*endptr != '\0') {
+                if (parse_timestr(optarg, &nsec_result) == -1) {
                     RTE_LOG(ERR, TCPGEN, "args: invalid runtime\n");
                     return -1;
                 }
+                config->tsc_runtime = NSEC_TO_TSC(nsec_result, rte_get_tsc_hz());
                 config->supplied_args |= ARG_RUNTIME;
                 break;
 
@@ -118,7 +121,7 @@ int tcpgen_parse_args(int argc, char **argv, struct user_config *config) {
     return ret;
 }
 
-static int tcpgen_parse_portmask(const char *portmask) {
+static int parse_portmask(const char *portmask) {
     char *end = NULL;
     unsigned long pm;
 
@@ -132,11 +135,52 @@ static int tcpgen_parse_portmask(const char *portmask) {
     return pm;
 }
 
+static int parse_timestr(const char *timestr, uint64_t *nsec_val) {
+    char nr_buf[128];
+    char unit_buf[128];
+
+    uint32_t index = 0;
+    for (; *timestr > 47 && *timestr < 58 && index < 127; timestr++) {
+        nr_buf[index] = *timestr;
+        index++;
+    }
+    nr_buf[index] = '\0';
+
+    index = 0;
+    for (; *timestr != '\0' && index < 127; timestr++) {
+        unit_buf[index] = *timestr;
+        index++;
+    }
+    unit_buf[index] = '\0';
+
+    char *endptr;
+    *nsec_val = strtoul(nr_buf, &endptr, 10);
+    if (*endptr != '\0')
+        return -1;
+
+    if (strcmp(unit_buf, "h") == 0)
+        *nsec_val *= 1000000000ULL * 3600;
+    else if (strcmp(unit_buf, "m") == 0)
+        *nsec_val *= 1000000000ULL * 60;
+    else if (strcmp(unit_buf, "s") == 0)
+        *nsec_val *= 1000000000;
+    else if (strcmp(unit_buf, "ms") == 0)
+        *nsec_val *= 1000000;
+    else if (strcmp(unit_buf, "us") == 0 || strcmp(unit_buf, "") == 0)
+        *nsec_val *= 1000;
+    else if (strcmp(unit_buf, "ns") == 0)
+        ;
+    else
+        return -1;
+
+    return 0;
+}
+
 void tcpgen_usage(void) {
-    printf("tcpgen [EAL options] -- -p PORTMASK -c CONFIG --pcap PCAP [-g USEC_TCP_GAP] [-r USEC_RUNTIME] [--results PREFIX]\n"
+    printf("tcpgen [EAL options] -- -p PORTMASK -c CONFIG --pcap PCAP [-g TCP_GAP] [-r RUNTIME] [--results PREFIX]\n"
            "  -p PORTMASK: Hexadecimal bitmask of ports to generate traffic on\n"
-           "  -g USEC_TCP_GAP: Open new TCP connection no earlier than every USEC_TCP_GAP microseconds\n"
-           "  -r USEC_RUNTIME: Stop after USEC_RUNTIME microseconds\n"
+           "  -g TCP_GAP: Open new TCP connection no earlier than every TCP_GAP{h|m|s|ms|us|ns} (default: microseconds)\n"
+           "  -r USEC_RUNTIME: Stop after RUNTIME{h|m|s|ms|us|ns} (default: microseconds)\n"
            "  -c CONFIG: Generator configuration file (see documentation)\n"
            "  --pcap PCAP: File containing reference packets for generating queries\n"
            "  --results PREFIX: Prefix of file containing per-lcore results in JSON format\n");
