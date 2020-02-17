@@ -19,107 +19,131 @@
 #define TSC_TO_USEC(tsc) ((tsc) / (rte_get_tsc_hz() / 1000000))
 #define TSC_TO_SEC(tsc) ((tsc) / rte_get_tsc_hz())
 
-void write_json_stats(const struct app_config *app_config, unsigned lcore_id, uint64_t runtime_tsc) {
+struct aggregate_stats {
+    uint64_t tx_bytes;
+    uint64_t tx_packets;
+    uint64_t tx_queries;
 
-    const struct lcore_queue_conf *queue_conf = &app_config->dpdk_config.lcore_queue_conf[lcore_id];
+    uint64_t rx_bytes;
+    uint64_t rx_packets;
+    uint64_t rx_responses;
 
-    uint64_t runtime_usec = TSC_TO_USEC(runtime_tsc);
+    uint64_t rx_rcode[DNS_RCODE_MAX_TYPES];
+
+    double tx_bitrate;
+    double tx_qps;
+    double tx_fps;
+
+    double rx_bitrate;
+    double rx_rps;
+    double rx_fps;
+
+    double response_rate;
+};
+
+static void get_aggregate_stats(const struct app_config *app_config, uint64_t runtime_usec, struct aggregate_stats *as);
+
+static void get_aggregate_stats(const struct app_config *app_config, uint64_t runtime_usec, struct aggregate_stats *as) {
+    memset(as, 0, sizeof(struct aggregate_stats));
+
+    unsigned lcore_id;
+    RTE_LCORE_FOREACH(lcore_id) {
+        as->tx_bytes += app_config->lcore_stats[lcore_id].tx_bytes;
+        as->tx_packets += app_config->lcore_stats[lcore_id].tx_packets;
+        as->tx_queries += app_config->lcore_stats[lcore_id].tx_queries;
+
+        as->rx_bytes += app_config->lcore_stats[lcore_id].rx_bytes;
+        as->rx_packets += app_config->lcore_stats[lcore_id].rx_packets;
+        as->rx_responses += app_config->lcore_stats[lcore_id].rx_responses;
+
+        for (int i = 0; i < DNS_RCODE_MAX_TYPES; i++) {
+            as->rx_rcode[i] += app_config->lcore_stats[lcore_id].rx_rcode[i];
+        }
+    }
+
+    as->tx_bitrate = ((as->tx_bytes << 3) / (double) runtime_usec) / 1000;
+    as->tx_qps = (as->tx_queries / (double) runtime_usec) * 1000000;
+    as->tx_fps = (as->tx_packets / (double) runtime_usec) * 1000000;
+
+    as->rx_bitrate = ((as->rx_bytes << 3) / (double) runtime_usec) / 1000;
+    as->rx_rps = (as->rx_responses / (double) runtime_usec) * 1000000;
+    as->rx_fps = (as->rx_packets / (double) runtime_usec) * 1000000;
+
+    as->response_rate = (as->rx_responses / (double) as->tx_queries) * 100;
+}
+
+void write_json_stats(const struct app_config *app_config, uint64_t runtime_tsc) {
 
     if (!(app_config->user_config.supplied_args & ARG_RESULT_FILE))
         return;
 
-    FILE *fp;
-    char fn[1024];
+    uint64_t runtime_usec = TSC_TO_USEC(runtime_tsc);
 
-    for (unsigned int i = 0; i < queue_conf->n_port; i++) {
+    struct aggregate_stats as;
+    get_aggregate_stats(app_config, runtime_usec, &as);
 
-        unsigned portid = queue_conf->port_list[i];
-
-        snprintf(fn, 1024, "%s_lcore_%d_port_%d.json", app_config->user_config.result_file, lcore_id, portid);
-        fp = fopen(fn, "w");
-        if (fp == NULL) {
-            RTE_LOG(ERR, TCPGEN, "write_json_stats: unable to open result file\n");
-            return;
-        }
-
-        fprintf(fp, "{\n\t\"tx_bytes\": %lu,\n\t\"tx_frame_count\": %lu,\n\t\"tx_query_count\": %lu,\n\t",
-                app_config->lcore_stats[portid].tx_bytes,
-                app_config->lcore_stats[portid].tx_packets,
-                app_config->lcore_stats[portid].tx_queries);
-        fprintf(fp, "\"rx_bytes\": %lu,\n\t\"rx_frame_count\": %lu,\n\t\"rx_response_count\": %lu,\n\t",
-               app_config->lcore_stats[portid].rx_bytes,
-               app_config->lcore_stats[portid].rx_packets,
-               app_config->lcore_stats[portid].rx_responses);
-        fprintf(fp, "\"runtime_usec\": %lu,\n\t", runtime_usec);
-        fprintf(fp, "\"response_stats\": {\n\t\t");
-
-        int written = 0;
-        for(int j = 0; j < DNS_RCODE_MAX_TYPES; j++) {
-            if (app_config->lcore_stats[portid].rx_rcode[j] > 0) {
-                fprintf(fp, "\"%d\": %lu,\n\t\t", j, app_config->lcore_stats[portid].rx_rcode[j]);
-                written++;
-            }
-        }
-
-        if(written > 0) {
-            fseek(fp, -4, SEEK_CUR);
-        }
-        fprintf(fp, "\n\t}\n}");
+    FILE *fp = fopen(app_config->user_config.result_file, "w");
+    if (fp == NULL) {
+        RTE_LOG(ERR, TCPGEN, "write_json_stats: unable to open result file\n");
+        return;
     }
 
+    fprintf(fp, "{\n\t\"tx_bytes\": %lu,\n\t\"tx_frame_count\": %lu,\n\t\"tx_query_count\": %lu,\n\t",
+            as.tx_bytes,
+            as.tx_packets,
+            as.tx_queries);
+    fprintf(fp, "\"rx_bytes\": %lu,\n\t\"rx_frame_count\": %lu,\n\t\"rx_response_count\": %lu,\n\t",
+            as.rx_bytes,
+            as.rx_packets,
+            as.rx_responses);
+    fprintf(fp, "\"runtime_usec\": %lu,\n\t", runtime_usec);
+    fprintf(fp, "\"response_stats\": {\n\t\t");
+
+    int written = 0;
+    for (int j = 0; j < DNS_RCODE_MAX_TYPES; j++) {
+        if (as.rx_rcode[j] > 0) {
+            fprintf(fp, "\"%d\": %lu,\n\t\t", j, as.rx_rcode[j]);
+            written++;
+        }
+    }
+
+    if (written > 0) {
+        fseek(fp, -4, SEEK_CUR);
+    }
+
+    fprintf(fp, "\n\t}\n}");
 }
 
 void print_all_stats(const struct app_config *app_config, uint64_t runtime_tsc) {
-
     uint64_t runtime_usec = TSC_TO_USEC(runtime_tsc);
     uint64_t runtime_sec = TSC_TO_SEC(runtime_tsc);
 
-    uint64_t total_tx_bytes = 0;
-    uint64_t total_tx_packets = 0;
-    uint64_t total_tx_queries = 0;
+    struct aggregate_stats as;
+    get_aggregate_stats(app_config, runtime_usec, &as);
 
-    uint64_t total_rx_bytes = 0;
-    uint64_t total_rx_packets = 0;
-    uint64_t total_rx_responses = 0;
-
-    unsigned lcore_id;
-    RTE_LCORE_FOREACH(lcore_id) {
-        printf("lcore %u total runtime: %lu microseconds (%lu seconds)\n", lcore_id, runtime_usec, runtime_sec);
-        printf("lcore %d stats:\n\tTX bytes: %lu\n\tTX packets: %lu\n\tTX queries: %lu\n\n\t",
-               lcore_id,
-               app_config->lcore_stats[lcore_id].tx_bytes,
-               app_config->lcore_stats[lcore_id].tx_packets,
-               app_config->lcore_stats[lcore_id].tx_queries);
-        total_tx_bytes += app_config->lcore_stats[lcore_id].tx_bytes;
-        total_tx_packets += app_config->lcore_stats[lcore_id].tx_packets;
-        total_tx_queries += app_config->lcore_stats[lcore_id].tx_queries;
-
-        printf("RX bytes: %lu\n\tRX packets: %lu\n\tRX responses: %lu\n\t\t",
-               app_config->lcore_stats[lcore_id].rx_bytes,
-               app_config->lcore_stats[lcore_id].rx_packets,
-               app_config->lcore_stats[lcore_id].rx_responses);
-        total_rx_bytes += app_config->lcore_stats[lcore_id].rx_bytes;
-        total_rx_packets += app_config->lcore_stats[lcore_id].rx_packets;
-        total_rx_responses += app_config->lcore_stats[lcore_id].rx_responses;
-
-        printf("NOERROR: %lu\n\t\tFORMERR: %lu\n\t\tSERVFAIL: %lu\n\t\tNXDOMAIN: %lu\n\t\tNOTIMP: %lu\n\t\tREFUSED: %lu\n\n\t",
-               app_config->lcore_stats[lcore_id].rx_rcode[DNS_RCODE_NOERROR],
-               app_config->lcore_stats[lcore_id].rx_rcode[DNS_RCODE_FORMERR],
-               app_config->lcore_stats[lcore_id].rx_rcode[DNS_RCODE_SERVFAIL],
-               app_config->lcore_stats[lcore_id].rx_rcode[DNS_RCODE_NXDOMAIN],
-               app_config->lcore_stats[lcore_id].rx_rcode[DNS_RCODE_NOTIMP],
-               app_config->lcore_stats[lcore_id].rx_rcode[DNS_RCODE_REFUSED]);
-
-    }
-
-    printf("----- Aggregate statistics -----\n");
-    printf("TX queries: TX bitrate: %f Gbit/s\n\tTX QPS: %.2f\n\tTX FPS: %.2f\n\tRX bitrate: %f Gbit/s\n\tRX RPS: %.2f\n\tRX FPS: %.2f\n\tResponse rate: %.2f%%\n",
-           ((total_tx_bytes << 3) / (double) runtime_usec) / 1000,
-           (total_tx_queries / (double) runtime_usec) * 1000000,
-           (total_tx_packets / (double) runtime_usec) * 1000000,
-           ((total_rx_bytes << 3) / (double) runtime_usec) / 1000,
-           (total_rx_responses / (double) runtime_usec) * 1000000,
-           (total_rx_packets / (double) runtime_usec) * 1000000,
-           ((total_rx_responses / (double) total_tx_queries) * 100)
-           );
+    printf("\nTotal runtime: %lu microseconds (%lu seconds)\n", runtime_usec, runtime_sec);
+    printf("\tTX bytes: %lu\n\tTX packets: %lu\n\tTX queries: %lu\n\n",
+           as.tx_bytes,
+           as.tx_packets,
+           as.tx_queries);
+    printf("\tRX bytes: %lu\n\tRX packets: %lu\n\tRX responses: %lu\n",
+           as.rx_bytes,
+           as.rx_packets,
+           as.rx_responses);
+    printf("\t\tNOERROR: %lu\n\t\tFORMERR: %lu\n\t\tSERVFAIL: %lu\n\t\tNXDOMAIN: %lu\n\t\tNOTIMP: %lu\n\t\tREFUSED: %lu\n\n",
+           as.rx_rcode[DNS_RCODE_NOERROR],
+           as.rx_rcode[DNS_RCODE_FORMERR],
+           as.rx_rcode[DNS_RCODE_SERVFAIL],
+           as.rx_rcode[DNS_RCODE_NXDOMAIN],
+           as.rx_rcode[DNS_RCODE_NOTIMP],
+           as.rx_rcode[DNS_RCODE_REFUSED]);
+    printf("\tTX bitrate: %f Gbit/s\n\tTX QPS: %.2f\n\tTX FPS: %.2f\n\n\tRX bitrate: %f Gbit/s\n\tRX RPS: %.2f\n\tRX FPS: %.2f\n\n\tResponse rate: %.2f%%\n",
+           as.tx_bitrate,
+           as.tx_qps,
+           as.tx_fps,
+           as.rx_bitrate,
+           as.rx_rps,
+           as.rx_fps,
+           as.response_rate
+    );
 }

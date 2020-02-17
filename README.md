@@ -37,17 +37,16 @@ First, check which network interfaces are available by running `dpdk-devbind --s
 ### Usage
 
 ```
-tcpgen [EAL options] -- -p PORTMASK -c CONFIG [-g USEC_TCP_GAP] [-r USEC_RUNTIME] {--pcap PCAP | --qnames QNAMES} [--results PREFIX]
+tcpgen [EAL options] -- -p PORTMASK -c CONFIG --pcap PCAP [-g USEC_TCP_GAP] [-r USEC_RUNTIME] [--results RESULTS]
   -p PORTMASK: Hexadecimal bitmask of ports to generate traffic on
+  -c CONFIG: Generator configuration file (see example.conf)
+  --pcap PCAP: File containing reference packets for generating queries
   -g USEC_TCP_GAP: Open a new TCP connection no earlier than every TCP_GAP{h|m|s|ms|us|ns} (default: microseconds)
   -r USEC_RUNTIME: Stop after RUNTIME{h|m|s|ms|us|ns} (default: microseconds)
-  -c CONFIG: Generator configuration file (see documentation)
-  --pcap PCAP: File containing reference packets for generating queries
-  --qnames QNAMES: File containing QNAMEs and record types used to derive queries (see documentation)
-  --results PREFIX: Prefix of file containing per-lcore results in JSON format
+  --results RESULTS: Name of file containing per-lcore results in JSON format
 ```
 
-* The only EAL option that needs to be supplied is the core mask (supplied by the `-c` argument. Use `-c 1` to use a single thread. Multithreading is currently broken and behavior with a different core mask is undefined).
+* The only EAL option that needs to be supplied is the core mask (supplied by the `-c` argument).
 
 * Use `PORTMASK` to select ports on which to generate traffic (bit mask that selects interfaces bound to a DPDK-compatible driver in the order displayed in `dpdk-devbind --status`)
 * Use `USEC_TCP_GAP` to specify delay between opening new TCP connections (in microseconds). If the argument isn't supplied or has a value of 0, TCP connections will be opened with the maximum possible frequency.

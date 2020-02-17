@@ -37,6 +37,7 @@ struct port_stats {
 } __rte_cache_aligned;
 
 void print_all_stats(const struct app_config *app_config, uint64_t runtime_tsc);
-void write_json_stats(const struct app_config *app_config, unsigned lcore_id, uint64_t runtime_tsc);
+
+void write_json_stats(const struct app_config *app_config, uint64_t runtime_tsc);
 
 #endif //DPDK_TCP_GENERATOR_STATS_H

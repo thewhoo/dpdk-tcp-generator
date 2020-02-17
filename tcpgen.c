@@ -96,6 +96,7 @@ int main(int argc, char **argv) {
     rte_mempool_free(app_config.dpdk_config.pktmbuf_pool);
 
     print_all_stats(&app_config, runtime_tsc);
+    write_json_stats(&app_config, runtime_tsc);
 
     return ret;
 }
