@@ -37,20 +37,20 @@ First, check which network interfaces are available by running `dpdk-devbind --s
 ### Usage
 
 ```
-tcpgen [EAL options] -- -p PORTMASK -c CONFIG --pcap PCAP [-g USEC_TCP_GAP] [-r USEC_RUNTIME] [--results RESULTS]
+tcpgen [EAL options] -- -p PORTMASK -c CONFIG --pcap PCAP [-g TCP_GAP] [-r RUNTIME] [--results RESULTS]
   -p PORTMASK: Hexadecimal bitmask of ports to generate traffic on
   -c CONFIG: Generator configuration file (see example.conf)
   --pcap PCAP: File containing reference packets for generating queries
-  -g USEC_TCP_GAP: Open a new TCP connection no earlier than every TCP_GAP{h|m|s|ms|us|ns} (default: microseconds)
-  -r USEC_RUNTIME: Stop after RUNTIME{h|m|s|ms|us|ns} (default: microseconds)
+  -g TCP_GAP: Open a new TCP connection no earlier than every TCP_GAP{h|m|s|ms|us|ns} (default: microseconds)
+  -r RUNTIME: Stop after RUNTIME{h|m|s|ms|us|ns} (default: microseconds)
   --results RESULTS: Name of file containing per-lcore results in JSON format
 ```
 
 * The only EAL option that needs to be supplied is the core mask (supplied by the `-c` argument).
 
 * Use `PORTMASK` to select ports on which to generate traffic (bit mask that selects interfaces bound to a DPDK-compatible driver in the order displayed in `dpdk-devbind --status`)
-* Use `USEC_TCP_GAP` to specify delay between opening new TCP connections. If the argument isn't supplied, a very slow rate of approximately 10 connections per second will be used. If the argument has a value of 0, TCP connections will be opened with the maximum possible frequency.
-* Use `USEC_RUNTIME` to specify the total runtime of the generator. If no runtime limit is given, the generator will run until stopped.
+* Use `TCP_GAP` to specify delay between opening new TCP connections. If the argument isn't supplied, a very slow rate of approximately 10 connections per second will be used. If the argument has a value of 0, TCP connections will be opened with the maximum possible frequency.
+* Use `RUNTIME` to specify the total runtime of the generator. If no runtime limit is given, the generator will run until stopped.
 * All other configuration is specified in the configuration file. See `example.conf`.
 
 ### Notes

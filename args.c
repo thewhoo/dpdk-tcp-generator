@@ -175,11 +175,11 @@ static int parse_timestr(const char *timestr, uint64_t *nsec_val) {
 }
 
 void tcpgen_usage(void) {
-    printf("tcpgen [EAL options] -- -p PORTMASK -c CONFIG --pcap PCAP [-g USEC_TCP_GAP] [-r USEC_RUNTIME] [--results RESULTS]\n"
+    printf("tcpgen [EAL options] -- -p PORTMASK -c CONFIG --pcap PCAP [-g TCP_GAP] [-r RUNTIME] [--results RESULTS]\n"
            "-p PORTMASK: Hexadecimal bitmask of ports to generate traffic on\n"
            "-c CONFIG: Generator configuration file (see example.conf)\n"
            "--pcap PCAP: File containing reference packets for generating queries\n"
-           "-g USEC_TCP_GAP: Open a new TCP connection no earlier than every TCP_GAP{h|m|s|ms|us|ns} (default: microseconds)\n"
-           "-r USEC_RUNTIME: Stop after RUNTIME{h|m|s|ms|us|ns} (default: microseconds)\n"
+           "-g TCP_GAP: Open a new TCP connection no earlier than every TCP_GAP{h|m|s|ms|us|ns} (default: microseconds)\n"
+           "-r RUNTIME: Stop after RUNTIME{h|m|s|ms|us|ns} (default: microseconds)\n"
            "--results RESULTS: Name of file containing per-lcore results in JSON format\n");
 }
