@@ -19,8 +19,6 @@
 #define ARGS_REQUIRED (ARG_PORT_MASK | ARG_CONFIG_FILE | ARG_PCAP_FILE)
 #define ARGS_VALID(args) (((args) & ARGS_REQUIRED) == ARGS_REQUIRED)
 
-#define NSEC_TO_TSC(nsec, cpu_freq) ((uint64_t)((cpu_freq) / (double)1e9 * (nsec)))
-
 static int parse_portmask(const char *portmask);
 
 static int parse_timestr(const char *timestr, uint64_t *nsec_val);

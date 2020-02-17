@@ -28,6 +28,13 @@ static void packet_6to4_ratio_set(struct app_config *app_config);
 
 static void signal_handler(int signum);
 
+static struct user_config default_user_config = {
+            .tx_tsc_period = 1000000000, // 1 new connection every 1e9 CPU cycles
+            .tsc_runtime = 0,
+            .tcp_dst_port = 53,
+            .ip_ipv6_probability = 0,
+};
+
 int main(int argc, char **argv) {
     int ret;
 
@@ -46,6 +53,7 @@ int main(int argc, char **argv) {
     struct app_config app_config;
     memset(&app_config, 0, sizeof(app_config));
     app_config.dpdk_config = dpdk_default_config;
+    app_config.user_config = default_user_config;
 
     wyrand_seed();
 

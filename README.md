@@ -49,8 +49,8 @@ tcpgen [EAL options] -- -p PORTMASK -c CONFIG --pcap PCAP [-g USEC_TCP_GAP] [-r 
 * The only EAL option that needs to be supplied is the core mask (supplied by the `-c` argument).
 
 * Use `PORTMASK` to select ports on which to generate traffic (bit mask that selects interfaces bound to a DPDK-compatible driver in the order displayed in `dpdk-devbind --status`)
-* Use `USEC_TCP_GAP` to specify delay between opening new TCP connections (in microseconds). If the argument isn't supplied or has a value of 0, TCP connections will be opened with the maximum possible frequency.
-* Use `USEC_RUNTIME` to specify the total runtime of the generator (in microseconds). If no runtime limit is given, the generator will run until stopped.
+* Use `USEC_TCP_GAP` to specify delay between opening new TCP connections. If the argument isn't supplied, a very slow rate of approximately 10 connections per second will be used. If the argument has a value of 0, TCP connections will be opened with the maximum possible frequency.
+* Use `USEC_RUNTIME` to specify the total runtime of the generator. If no runtime limit is given, the generator will run until stopped.
 * All other configuration is specified in the configuration file. See `example.conf`.
 
 ### Notes

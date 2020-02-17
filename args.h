@@ -15,7 +15,10 @@
 #define ARG_RESULT_FILE (1 << 5)
 #define ARG_RUNTIME (1 << 6)
 
+#define NSEC_TO_TSC(nsec, cpu_freq) ((uint64_t)((cpu_freq) / (double)1e9 * (nsec)))
+
 void tcpgen_usage(void);
+
 int tcpgen_parse_args(int argc, char **argv, struct user_config *args);
 
 #endif //DPDK_TCP_GENERATOR_ARGS_H
