@@ -377,10 +377,17 @@ static void lcore_main_loop(struct app_config *app_config) {
 
             // Open new connection every tx_tsc_period
             if (open_diff > app_config->user_config.tx_tsc_period) {
-                if (wyrand() < app_config->ipv6_probability)
-                    tcp6_open(port_id, queue_id, app_config);
-                else
-                    tcp4_open(port_id, queue_id, app_config);
+                if (wyrand() < app_config->ipv6_probability) {
+                    if (wyrand() < app_config->user_config.udp_probability)
+                        generate_udp6_query(port_id, queue_id, app_config);
+                    else
+                        tcp6_open(port_id, queue_id, app_config);
+                } else {
+                    if (wyrand() < app_config->user_config.udp_probability)
+                        generate_udp4_query(port_id, queue_id, app_config);
+                    else
+                        tcp4_open(port_id, queue_id, app_config);
+                }
 
                 prev_open_tsc = cur_tsc;
             }

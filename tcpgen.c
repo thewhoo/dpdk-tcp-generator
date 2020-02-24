@@ -29,10 +29,11 @@ static void packet_6to4_ratio_set(struct app_config *app_config);
 static void signal_handler(int signum);
 
 static struct user_config default_user_config = {
-            .tx_tsc_period = 1000000000, // 1 new connection every 1e9 CPU cycles
-            .tsc_runtime = 0,
-            .tcp_dst_port = 53,
-            .ip_ipv6_probability = 0,
+        .tx_tsc_period = 1000000000, // 1 new connection every 1e9 CPU cycles
+        .tsc_runtime = 0,
+        .dst_port = 53,
+        .ip_ipv6_probability = 0.0,
+        .udp_probability = 0.0,
 };
 
 int main(int argc, char **argv) {
@@ -82,11 +83,11 @@ int main(int argc, char **argv) {
     // Map queues on ports to lcores
     lcore_port_queue_map(&app_config);
 
-    if(init_ports(&app_config) == 0) {
+    if (init_ports(&app_config) == 0) {
         rte_exit(EXIT_FAILURE, "Port initialization failed\n");
     }
 
-    if(check_all_ports_link_status(app_config.user_config.enabled_port_mask) == 0) {
+    if (check_all_ports_link_status(app_config.user_config.enabled_port_mask) == 0) {
         rte_exit(EXIT_FAILURE, "Cannot bring up all ports\n");
     }
 
@@ -120,16 +121,13 @@ static void packet_6to4_ratio_set(struct app_config *app_config) {
     if (app_config->user_config.supplied_config_opts & CONF_OPT_NUM_IP_IPV6_PROBABILITY) {
         if (app_config->user_config.ip_ipv6_probability >= 1.0f) {
             app_config->ipv6_probability = UINT64_MAX;
-        }
-        else if (app_config->user_config.ip_ipv6_probability <= 0.0f) {
+        } else if (app_config->user_config.ip_ipv6_probability <= 0.0f) {
             app_config->ipv6_probability = 0;
-        }
-        else {
+        } else {
             app_config->ipv6_probability = (uint64_t) (app_config->user_config.ip_ipv6_probability *
                                                        (double) UINT64_MAX);
         }
-    }
-    else {
+    } else {
         app_config->ipv6_probability = app_config->pcap_ipv6_probability;
     }
 }

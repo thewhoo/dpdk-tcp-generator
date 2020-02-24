@@ -36,12 +36,15 @@
 #define mbuf_eth_ptr(m) (rte_pktmbuf_mtod((m), struct ether_hdr *))
 #define mbuf_ip4_ip_ptr(m) (rte_pktmbuf_mtod_offset((m), struct ipv4_hdr *, sizeof(struct ether_hdr)))
 #define mbuf_ip4_tcp_ptr(m) (rte_pktmbuf_mtod_offset((m), struct tcp_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr)))
+#define mbuf_ip4_udp_ptr(m) (rte_pktmbuf_mtod_offset((m), struct udp_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr)))
 #define mbuf_ip6_ip_ptr(m) (rte_pktmbuf_mtod_offset((m), struct ipv6_hdr *, sizeof(struct ether_hdr)))
 #define mbuf_ip6_tcp_ptr(m) (rte_pktmbuf_mtod_offset((m), struct tcp_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv6_hdr)))
+#define mbuf_ip6_udp_ptr(m) (rte_pktmbuf_mtod_offset((m), struct udp_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv6_hdr)))
 
-#define mbuf_ip4_dns_header_ptr(m) (rte_pktmbuf_mtod_offset((m), struct dns_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) + sizeof(struct tcp_hdr)))
-#define mbuf_ip6_dns_header_ptr(m) (rte_pktmbuf_mtod_offset((m), struct dns_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv6_hdr) + sizeof(struct tcp_hdr)))
-#define mbuf_dns_qname_ptr(m) (rte_pktmbuf_mtod_offset((m), uint8_t *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) + sizeof(struct tcp_hdr) + sizeof(struct dns_hdr)))
+#define mbuf_ip4_tcp_dns_header_ptr(m) (rte_pktmbuf_mtod_offset((m), struct tcp_dns_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) + sizeof(struct tcp_hdr)))
+#define mbuf_ip4_udp_dns_header_ptr(m) (rte_pktmbuf_mtod_offset((m), struct dns_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) + sizeof(struct udp_hdr)))
+#define mbuf_ip6_tcp_dns_header_ptr(m) (rte_pktmbuf_mtod_offset((m), struct tcp_dns_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv6_hdr) + sizeof(struct tcp_hdr)))
+#define mbuf_ip6_udp_dns_header_ptr(m) (rte_pktmbuf_mtod_offset((m), struct dns_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv6_hdr) + sizeof(struct udp_hdr)))
 
 #define DNS_PORT 53
 #define IPv4_ADDR_LEN 4
@@ -106,8 +109,9 @@ struct user_config {
     uint8_t ip6_src_netmask[IPv6_ADDR_LEN];
     uint64_t ip6_src_rand_bit_mask[2];
     uint8_t ip6_dst_addr[IPv6_ADDR_LEN];
-    uint16_t tcp_dst_port;
+    uint16_t dst_port;
     double ip_ipv6_probability;
+    uint64_t udp_probability;
 
     uint32_t supplied_args;
     uint32_t supplied_config_opts;

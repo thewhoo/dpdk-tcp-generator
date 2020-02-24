@@ -69,7 +69,10 @@ static void get_aggregate_stats(const struct app_config *app_config, uint64_t ru
     as->rx_rps = (as->rx_responses / (double) runtime_usec) * 1000000;
     as->rx_fps = (as->rx_packets / (double) runtime_usec) * 1000000;
 
-    as->response_rate = (as->rx_responses / (double) as->tx_queries) * 100;
+    if(as->tx_queries > 0)
+        as->response_rate = (as->rx_responses / (double) as->tx_queries) * 100;
+    else
+        as->response_rate = 0.0f;
 }
 
 void write_json_stats(const struct app_config *app_config, uint64_t runtime_tsc) {

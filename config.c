@@ -19,7 +19,7 @@
 #define CONF_MAC_MASK (CONF_OPT_NUM_SRC_MAC | CONF_OPT_NUM_DST_MAC)
 #define CONF_IP4_MASK (CONF_OPT_NUM_IP4_SRC_NET | CONF_OPT_NUM_IP4_SRC_MASK | CONF_OPT_NUM_IP4_DST_IP)
 #define CONF_IP6_MASK (CONF_OPT_NUM_IP6_SRC_NET | CONF_OPT_NUM_IP6_SRC_MASK | CONF_OPT_NUM_IP6_DST_IP)
-#define CONF_OPTIONAL_OPTS (CONF_OPT_NUM_IP_IPV6_PROBABILITY | CONF_OPT_NUM_TCP_DST_PORT)
+#define CONF_OPTIONAL_OPTS (CONF_OPT_NUM_IP_IPV6_PROBABILITY | CONF_OPT_NUM_DST_PORT | CONF_OPT_NUM_UDP_PROBABILITY)
 
 #define CONF_STRIP_OPTIONAL(opts) ((opts) & (~CONF_OPTIONAL_OPTS))
 
@@ -33,8 +33,9 @@
 #define CONF_OPT_IP6_SRC_NET "ipv6-source-network"
 #define CONF_OPT_IP6_SRC_MASK "ipv6-source-netmask"
 #define CONF_OPT_IP6_DST_IP "ipv6-destination-ip"
-#define CONF_OPT_TCP_DST_PORT "tcp-destination-port"
+#define CONF_OPT_DST_PORT "destination-port"
 #define CONF_OPT_IP_IPV6_PROBABILITY "ip-ipv6-probability"
+#define CONF_OPT_UDP_PROBABILITY "udp-probability"
 
 #define STR_EQUAL(str1, str2, len) (strncmp((str1), (str2), (len)) == 0)
 #define CHAR_IS_WHITESPACE(ch) (((ch) == ' ') || ((ch) == '\t') || ((ch) == '\r') || ((ch) == '\n') || ((ch) == EOF))
@@ -49,13 +50,16 @@ enum {
     CONF_AUTOMATON_STATE_IP6_SRC_NET,
     CONF_AUTOMATON_STATE_IP6_SRC_MASK,
     CONF_AUTOMATON_STATE_IP6_DST_IP,
-    CONF_AUTOMATON_STATE_TCP_DST_PORT,
+    CONF_AUTOMATON_STATE_DST_PORT,
     CONF_AUTOMATON_STATE_IP_IPV6_PROBABILITY,
+    CONF_AUTOMATON_STATE_UDP_PROBABILITY,
 };
 
 #define AUTOMATON_EXIT_FAIL(param) do {RTE_LOG(ERR, TCPGEN, "config_file_parse: failed to parse value of %s\n", (param)); return -1;} while (0)
 
 static int parse_mac_addr_str(const char *mac_addr_str, uint8_t *dest);
+
+static uint64_t packet_udp_probability_conv(double probability);
 
 static int parse_mac_addr_str(const char *mac_addr_str, uint8_t *dest) {
     char buf[128];
@@ -92,6 +96,16 @@ static int parse_mac_addr_str(const char *mac_addr_str, uint8_t *dest) {
         return 0;
     else
         return -1;
+}
+
+static uint64_t packet_udp_probability_conv(double probability) {
+    if (probability >= 1.0f)
+        return UINT64_MAX;
+
+    if (probability <= 0.0f)
+        return 0;
+
+    return (uint64_t) (probability * (double) UINT64_MAX);
 }
 
 int config_file_parse(const char *filename, struct user_config *config) {
@@ -142,10 +156,12 @@ int config_file_parse(const char *filename, struct user_config *config) {
                 conf_automaton_state = CONF_AUTOMATON_STATE_IP6_SRC_MASK;
             } else if (STR_EQUAL(buf, CONF_OPT_IP6_DST_IP, buf_pos)) {
                 conf_automaton_state = CONF_AUTOMATON_STATE_IP6_DST_IP;
-            } else if (STR_EQUAL(buf, CONF_OPT_TCP_DST_PORT, buf_pos)) {
-                conf_automaton_state = CONF_AUTOMATON_STATE_TCP_DST_PORT;
+            } else if (STR_EQUAL(buf, CONF_OPT_DST_PORT, buf_pos)) {
+                conf_automaton_state = CONF_AUTOMATON_STATE_DST_PORT;
             } else if (STR_EQUAL(buf, CONF_OPT_IP_IPV6_PROBABILITY, buf_pos)) {
                 conf_automaton_state = CONF_AUTOMATON_STATE_IP_IPV6_PROBABILITY;
+            } else if (STR_EQUAL(buf, CONF_OPT_UDP_PROBABILITY, buf_pos)) {
+                conf_automaton_state = CONF_AUTOMATON_STATE_UDP_PROBABILITY;
             } else {
                 RTE_LOG(ERR, TCPGEN, "config_file_parse: unknown configuration key: %s\n", buf);
                 return -1;
@@ -208,19 +224,26 @@ int config_file_parse(const char *filename, struct user_config *config) {
                     }
                     config->supplied_config_opts |= CONF_OPT_NUM_IP6_DST_IP;
                     break;
-                case CONF_AUTOMATON_STATE_TCP_DST_PORT:
-                    config->tcp_dst_port = strtoul(buf, &endptr, 10);
+                case CONF_AUTOMATON_STATE_DST_PORT:
+                    config->dst_port = strtoul(buf, &endptr, 10);
                     if (*endptr != '\0') {
-                        AUTOMATON_EXIT_FAIL(CONF_OPT_TCP_DST_PORT);
+                        AUTOMATON_EXIT_FAIL(CONF_OPT_DST_PORT);
                     }
-                    config->supplied_config_opts |= CONF_OPT_NUM_TCP_DST_PORT;
+                    config->supplied_config_opts |= CONF_OPT_NUM_DST_PORT;
                     break;
                 case CONF_AUTOMATON_STATE_IP_IPV6_PROBABILITY:
                     config->ip_ipv6_probability = strtod(buf, &endptr);
-                    if(endptr == buf) {
+                    if (endptr == buf) {
                         AUTOMATON_EXIT_FAIL(CONF_OPT_IP_IPV6_PROBABILITY);
                     }
                     config->supplied_config_opts |= CONF_OPT_NUM_IP_IPV6_PROBABILITY;
+                    break;
+                case CONF_AUTOMATON_STATE_UDP_PROBABILITY:
+                    config->udp_probability = packet_udp_probability_conv(strtod(buf, &endptr));
+                    if (endptr == buf) {
+                        AUTOMATON_EXIT_FAIL(CONF_OPT_UDP_PROBABILITY);
+                    }
+                    config->supplied_config_opts |= CONF_OPT_NUM_UDP_PROBABILITY;
                     break;
                 default:
                     RTE_LOG(ERR, TCPGEN, "config_file_parse: invalid conf automaton state\n");
