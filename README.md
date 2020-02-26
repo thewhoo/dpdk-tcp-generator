@@ -68,7 +68,7 @@ ipv4-source-network 10.10.64.0
 ipv4-source-netmask 255.255.192.0
 ipv4-destination-ip 10.99.0.1
 
-tcp-destination-port 53
+destination-port 53
 ```
 
 The routing table of the server should contain a route for the randomized query subnet (you can use any destination IP, the generator doesn't care):

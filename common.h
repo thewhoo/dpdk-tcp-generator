@@ -112,6 +112,7 @@ struct user_config {
     uint16_t dst_port;
     double ip_ipv6_probability;
     uint64_t udp_probability;
+    uint64_t tcp_keepalive_probability;
 
     uint32_t supplied_args;
     uint32_t supplied_config_opts;

@@ -473,7 +473,8 @@ static inline void response_classify(struct app_config *app_config, const struct
 }
 
 // Incoming packet handler
-void handle_incoming(struct rte_mbuf *m, unsigned portid, uint16_t queue_id, struct app_config *app_config) {
+void handle_incoming(struct rte_mbuf *m, unsigned portid, uint16_t queue_id, struct app_config *app_config,
+                     bool *keepalive_ticket) {
 
     app_config->lcore_stats[rte_lcore_id()].rx_bytes += m->pkt_len;
 
@@ -549,14 +550,25 @@ void handle_incoming(struct rte_mbuf *m, unsigned portid, uint16_t queue_id, str
             // Handle DNS query response
         else if (MBUF_HAS_MIN_TCP_DNS_LEN(ether_type, m->data_len)) {
             app_config->lcore_stats[rte_lcore_id()].rx_responses++;
-
-            rte_mbuf_refcnt_update(m, 1); // Keep mbuf for RCODE classification
-
-            send_ack(m, portid, queue_id, app_config, true);
-
             response_classify(app_config, dns_hdr);
 
-            rte_mbuf_refcnt_update(m, -1);
+            // TCP keep-alive
+            if (*keepalive_ticket && wyrand() < app_config->user_config.tcp_keepalive_probability) {
+                *keepalive_ticket = false;
+
+                // Keep for cloning
+                rte_mbuf_refcnt_update(m, 1);
+
+                send_ack(m, portid, queue_id, app_config, false);
+
+                struct rte_mbuf *m_clone = mbuf_clone(m, app_config);
+                rte_mbuf_refcnt_update(m, -1);
+
+                generate_tcp_query(m_clone, portid, queue_id, app_config);
+            } else {
+                // Send FIN
+                send_ack(m, portid, queue_id, app_config, true);
+            }
         } else {
             rte_pktmbuf_free(m);
         }

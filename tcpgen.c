@@ -34,6 +34,7 @@ static struct user_config default_user_config = {
         .dst_port = 53,
         .ip_ipv6_probability = 0.0,
         .udp_probability = 0,
+        .tcp_keepalive_probability = 0,
 };
 
 int main(int argc, char **argv) {

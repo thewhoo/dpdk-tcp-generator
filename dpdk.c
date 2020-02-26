@@ -3,6 +3,7 @@
 //
 
 #include <stdio.h>
+#include <stdbool.h>
 
 #include <rte_log.h>
 #include <rte_ethdev.h>
@@ -350,6 +351,8 @@ static void lcore_main_loop(struct app_config *app_config) {
     uint64_t prev_open_tsc = 0;
     uint64_t open_diff;
 
+    bool keepalive_ticket = true;
+
     while (!tcpgen_force_quit) {
         cur_tsc = rte_rdtsc();
 
@@ -377,7 +380,14 @@ static void lcore_main_loop(struct app_config *app_config) {
 
             // Open new connection every tx_tsc_period
             if (open_diff > app_config->user_config.tx_tsc_period) {
-                if (wyrand() < app_config->ipv6_probability) {
+                // Reset counter
+                prev_open_tsc = cur_tsc;
+
+                // Do not open new connection if previous one was recycled
+                if (!keepalive_ticket) {
+                    // Restore keepalive ticket
+                    keepalive_ticket = true;
+                } else if (wyrand() < app_config->ipv6_probability) {
                     if (wyrand() < app_config->user_config.udp_probability)
                         generate_udp6_query(port_id, queue_id, app_config);
                     else
@@ -389,7 +399,6 @@ static void lcore_main_loop(struct app_config *app_config) {
                         tcp4_open(port_id, queue_id, app_config);
                 }
 
-                prev_open_tsc = cur_tsc;
             }
 
             // Handle incoming traffic
@@ -400,7 +409,7 @@ static void lcore_main_loop(struct app_config *app_config) {
             for (j = 0; j < nb_rx; j++) {
                 m = pkts_burst[j];
                 rte_prefetch0(rte_pktmbuf_mtod(m, void *));
-                handle_incoming(m, port_id, queue_id, app_config);
+                handle_incoming(m, port_id, queue_id, app_config, &keepalive_ticket);
             }
         }
     }

@@ -20,6 +20,7 @@
 #define CONF_OPT_NUM_DST_PORT (1 << 8)
 #define CONF_OPT_NUM_IP_IPV6_PROBABILITY (1 << 9)
 #define CONF_OPT_NUM_UDP_PROBABILITY (1 << 10)
+#define CONF_OPT_NUM_TCP_KEEPALIVE_PROBABILITY (1 << 11)
 
 int config_file_parse(const char *filename, struct user_config *config);
 
