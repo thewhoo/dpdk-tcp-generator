@@ -41,7 +41,6 @@ struct dpdk_config dpdk_default_config = {
         .pktmbuf_pool = NULL,
 };
 
-#define MAX_PKT_BURST 32
 #define BURST_TX_DRAIN_US 100
 #define MEMPOOL_CACHE_SIZE 256
 #define PKTMBUF_MEMPOOL_SIZE 262144
@@ -171,14 +170,14 @@ uint16_t init_ports(struct app_config *app_config) {
 
         // Initialize TX buffers
         app_config->dpdk_config.tx_buffer[port_id] = rte_zmalloc_socket("tx_buffer",
-                                                                        RTE_ETH_TX_BUFFER_SIZE(MAX_PKT_BURST), 0,
+                                                                        RTE_ETH_TX_BUFFER_SIZE(RXTX_MAX_PKT_BURST), 0,
                                                                         rte_eth_dev_socket_id(port_id));
         if (app_config->dpdk_config.tx_buffer[port_id] == NULL) {
             RTE_LOG(CRIT, TCPGEN, "init_ports: cannot allocate TX buffer on port %u\n", port_id);
             return 0;
         }
 
-        rte_eth_tx_buffer_init(app_config->dpdk_config.tx_buffer[port_id], MAX_PKT_BURST);
+        rte_eth_tx_buffer_init(app_config->dpdk_config.tx_buffer[port_id], RXTX_MAX_PKT_BURST);
         ret = rte_eth_tx_buffer_set_err_callback(app_config->dpdk_config.tx_buffer[port_id],
                                                  rte_eth_tx_buffer_count_callback,
                                                  &app_config->port_stats[port_id].tx_dropped);
@@ -317,7 +316,7 @@ static int launch_one_lcore(struct app_config *app_config) {
 }
 
 static void lcore_main_loop(struct app_config *app_config) {
-    struct rte_mbuf *pkts_burst[MAX_PKT_BURST];
+    struct rte_mbuf *pkts_burst[RXTX_MAX_PKT_BURST];
     struct rte_mbuf *m;
     struct rte_eth_dev_tx_buffer *tx_buffer;
 
@@ -351,7 +350,7 @@ static void lcore_main_loop(struct app_config *app_config) {
     uint64_t prev_open_tsc = 0;
     uint64_t open_diff;
 
-    bool keepalive_ticket = true;
+    uint64_t keepalive_counter = 0;
 
     while (!tcpgen_force_quit) {
         cur_tsc = rte_rdtsc();
@@ -383,10 +382,9 @@ static void lcore_main_loop(struct app_config *app_config) {
                 // Reset counter
                 prev_open_tsc = cur_tsc;
 
-                // Do not open new connection if previous one was recycled
-                if (!keepalive_ticket) {
-                    // Restore keepalive ticket
-                    keepalive_ticket = true;
+                // Do not open new connection if previous connection was kept alive
+                if (keepalive_counter > 0) {
+                    keepalive_counter--;
                 } else if (wyrand() < app_config->ipv6_probability) {
                     if (wyrand() < app_config->user_config.udp_probability)
                         generate_udp6_query(port_id, queue_id, app_config);
@@ -402,14 +400,14 @@ static void lcore_main_loop(struct app_config *app_config) {
             }
 
             // Handle incoming traffic
-            nb_rx = rte_eth_rx_burst(port_id, queue_id, pkts_burst, MAX_PKT_BURST);
+            nb_rx = rte_eth_rx_burst(port_id, queue_id, pkts_burst, RXTX_MAX_PKT_BURST);
 
             app_config->lcore_stats[lcore_id].rx_packets += nb_rx;
 
             for (j = 0; j < nb_rx; j++) {
                 m = pkts_burst[j];
                 rte_prefetch0(rte_pktmbuf_mtod(m, void *));
-                handle_incoming(m, port_id, queue_id, app_config, &keepalive_ticket);
+                handle_incoming(m, port_id, queue_id, app_config, &keepalive_counter);
             }
         }
     }

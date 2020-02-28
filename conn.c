@@ -25,6 +25,7 @@
 #include "common.h"
 #include "wyrand.h"
 #include "conn.h"
+#include "dpdk.h"
 
 #define MAC_ADDR_XOR(addr1, addr2) \
 do { \
@@ -85,6 +86,8 @@ do { \
 
 #define ETHER_FRAME_MIN_LEN 60
 #define ETHER_FRAME_L1_EXTRA_BYTES 24
+
+#define MAX_TCP_KEEPALIVE_CONNS RXTX_MAX_PKT_BURST
 
 static void send_ack(struct rte_mbuf *m, unsigned portid, uint16_t queue_id, struct app_config *app_config, bool fin);
 
@@ -483,7 +486,7 @@ static inline void response_classify(struct app_config *app_config, const struct
 
 // Incoming packet handler
 void handle_incoming(struct rte_mbuf *m, unsigned portid, uint16_t queue_id, struct app_config *app_config,
-                     bool *keepalive_ticket) {
+                     uint64_t *keepalive_counter) {
 
     app_config->lcore_stats[rte_lcore_id()].rx_bytes += m->pkt_len;
 
@@ -556,14 +559,15 @@ void handle_incoming(struct rte_mbuf *m, unsigned portid, uint16_t queue_id, str
         else if (tcp_hdr->tcp_flags & 0x03) {
             send_ack(m, portid, queue_id, app_config, false);
         }
-            // Handle DNS query response
-        else if (MBUF_HAS_MIN_TCP_DNS_LEN(ether_type, m->data_len)) {
+            // Handle TCP DNS query response
+        else if (MBUF_HAS_MIN_DNS_LEN(m, dns_hdr)) {
             app_config->lcore_stats[rte_lcore_id()].rx_responses++;
             response_classify(app_config, dns_hdr);
 
             // TCP keep-alive
-            if (*keepalive_ticket && wyrand() < app_config->user_config.tcp_keepalive_probability) {
-                *keepalive_ticket = false;
+            if (*keepalive_counter < MAX_TCP_KEEPALIVE_CONNS &&
+                wyrand() < app_config->user_config.tcp_keepalive_probability) {
+                (*keepalive_counter)++;
 
                 // Keep for cloning
                 rte_mbuf_refcnt_update(m, 1);

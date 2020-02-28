@@ -9,6 +9,8 @@
 
 #include "common.h"
 
+#define RXTX_MAX_PKT_BURST 32
+
 struct dpdk_config dpdk_default_config;
 
 uint8_t check_all_ports_link_status(uint32_t port_mask);
