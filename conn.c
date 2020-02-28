@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <netinet/in.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 #include <rte_common.h>
 #include <rte_log.h>
@@ -35,6 +36,22 @@ do { \
     *((uint64_t *)(addr1)) ^= *((uint64_t *)(addr2)); \
     *((uint64_t *)((addr1) + 8)) ^= *((uint64_t *)((addr2) + 8)); \
 } while (0)
+
+#define mbuf_eth_ptr(m) (rte_pktmbuf_mtod((m), struct ether_hdr *))
+#define mbuf_ip4_ip_ptr(m) (rte_pktmbuf_mtod_offset((m), struct ipv4_hdr *, sizeof(struct ether_hdr)))
+#define mbuf_ip4_tcp_ptr(m) (rte_pktmbuf_mtod_offset((m), struct tcp_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr)))
+#define mbuf_ip4_udp_ptr(m) (rte_pktmbuf_mtod_offset((m), struct udp_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr)))
+#define mbuf_ip6_ip_ptr(m) (rte_pktmbuf_mtod_offset((m), struct ipv6_hdr *, sizeof(struct ether_hdr)))
+#define mbuf_ip6_tcp_ptr(m) (rte_pktmbuf_mtod_offset((m), struct tcp_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv6_hdr)))
+#define mbuf_ip6_udp_ptr(m) (rte_pktmbuf_mtod_offset((m), struct udp_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv6_hdr)))
+
+// Length of TCP header in bytes
+#define tcp_header_len(tcp_data_off) (((tcp_data_off) >> 2) & 0xfc)
+
+#define mbuf_ip4_tcp_dns_header_ptr(m, tcp_hdr_len) (rte_pktmbuf_mtod_offset((m), struct tcp_dns_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) + (tcp_hdr_len)))
+#define mbuf_ip4_udp_dns_header_ptr(m) (rte_pktmbuf_mtod_offset((m), struct dns_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) + sizeof(struct udp_hdr)))
+#define mbuf_ip6_tcp_dns_header_ptr(m, tcp_hdr_len) (rte_pktmbuf_mtod_offset((m), struct tcp_dns_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv6_hdr) + (tcp_hdr_len)))
+#define mbuf_ip6_udp_dns_header_ptr(m) (rte_pktmbuf_mtod_offset((m), struct dns_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv6_hdr) + sizeof(struct udp_hdr)))
 
 #define IP4_SYN_MBUF_DATALEN ( \
     sizeof(struct ether_hdr) + \
@@ -62,17 +79,9 @@ do { \
 #define IP4_MIN_PKT_LEN IP4_MIN_UDP_PKT_LEN
 #define IP6_MIN_PKT_LEN IP6_MIN_UDP_PKT_LEN
 #define MIN_PKT_LEN IP4_MIN_PKT_LEN
-#define IP4_TCP_DNS_PACKET_MIN_LEN (IP4_MIN_TCP_PKT_LEN + sizeof(struct tcp_dns_hdr))
-#define IP6_TCP_DNS_PACKET_MIN_LEN (IP6_MIN_TCP_PKT_LEN + sizeof(struct tcp_dns_hdr))
-#define IP4_UDP_DNS_PACKET_MIN_LEN IP4_MIN_UDP_PKT_LEN
-#define IP6_UDP_DNS_PACKET_MIN_LEN IP6_MIN_UDP_PKT_LEN
 
-#define MBUF_HAS_MIN_TCP_DNS_LEN(ether_type, data_len) ( \
-        ((ether_type) == ETHER_TYPE_IPv4 && (data_len) >= IP4_TCP_DNS_PACKET_MIN_LEN) || \
-        ((ether_type) == ETHER_TYPE_IPv6 && (data_len) >= IP6_TCP_DNS_PACKET_MIN_LEN) )
-#define MBUF_HAS_MIN_UDP_DNS_LEN(ether_type, data_len) ( \
-        ((ether_type) == ETHER_TYPE_IPv4 && (data_len) >= IP4_UDP_DNS_PACKET_MIN_LEN) || \
-        ((ether_type) == ETHER_TYPE_IPv6 && (data_len) >= IP6_UDP_DNS_PACKET_MIN_LEN) )
+// Check if the entire DNS header is present after struct dns_hdr ptr
+#define MBUF_HAS_MIN_DNS_LEN(m, dns_hdr) ((rte_pktmbuf_mtod_offset((m), char *, (m)->data_len) - (char *)(dns_hdr)) >= (ptrdiff_t)sizeof(struct dns_hdr))
 
 #define ETHER_FRAME_MIN_LEN 60
 #define ETHER_FRAME_L1_EXTRA_BYTES 24
@@ -497,7 +506,7 @@ void handle_incoming(struct rte_mbuf *m, unsigned portid, uint16_t queue_id, str
 
         if (ip4_hdr->next_proto_id == IPPROTO_TCP && m->pkt_len >= IP4_MIN_TCP_PKT_LEN) {
             tcp_hdr = mbuf_ip4_tcp_ptr(m);
-            dns_hdr = &mbuf_ip4_tcp_dns_header_ptr(m)->hdr;
+            dns_hdr = &mbuf_ip4_tcp_dns_header_ptr(m, tcp_header_len(tcp_hdr->data_off))->hdr;
         } else if (ip4_hdr->next_proto_id == IPPROTO_UDP && m->pkt_len >= IP4_MIN_UDP_PKT_LEN) {
             udp_hdr = mbuf_ip4_udp_ptr(m);
             dns_hdr = mbuf_ip4_udp_dns_header_ptr(m);
@@ -511,7 +520,7 @@ void handle_incoming(struct rte_mbuf *m, unsigned portid, uint16_t queue_id, str
 
         if (ip6_hdr->proto == IPPROTO_TCP && m->pkt_len >= IP6_MIN_TCP_PKT_LEN) {
             tcp_hdr = mbuf_ip6_tcp_ptr(m);
-            dns_hdr = &mbuf_ip6_tcp_dns_header_ptr(m)->hdr;
+            dns_hdr = &mbuf_ip6_tcp_dns_header_ptr(m, tcp_header_len(tcp_hdr->data_off))->hdr;
         } else if (ip6_hdr->proto == IPPROTO_UDP && m->pkt_len >= IP6_MIN_UDP_PKT_LEN) {
             udp_hdr = mbuf_ip6_udp_ptr(m);
             dns_hdr = mbuf_ip6_udp_dns_header_ptr(m);
@@ -580,7 +589,7 @@ void handle_incoming(struct rte_mbuf *m, unsigned portid, uint16_t queue_id, str
             return;
         }
 
-        if (MBUF_HAS_MIN_UDP_DNS_LEN(ether_type, m->data_len)) {
+        if (MBUF_HAS_MIN_DNS_LEN(m, dns_hdr)) {
             app_config->lcore_stats[rte_lcore_id()].rx_responses++;
 
             response_classify(app_config, dns_hdr);

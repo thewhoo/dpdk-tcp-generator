@@ -33,18 +33,7 @@
 
 #define RTE_LOGTYPE_TCPGEN RTE_LOGTYPE_USER1
 
-#define mbuf_eth_ptr(m) (rte_pktmbuf_mtod((m), struct ether_hdr *))
-#define mbuf_ip4_ip_ptr(m) (rte_pktmbuf_mtod_offset((m), struct ipv4_hdr *, sizeof(struct ether_hdr)))
-#define mbuf_ip4_tcp_ptr(m) (rte_pktmbuf_mtod_offset((m), struct tcp_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr)))
-#define mbuf_ip4_udp_ptr(m) (rte_pktmbuf_mtod_offset((m), struct udp_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr)))
-#define mbuf_ip6_ip_ptr(m) (rte_pktmbuf_mtod_offset((m), struct ipv6_hdr *, sizeof(struct ether_hdr)))
-#define mbuf_ip6_tcp_ptr(m) (rte_pktmbuf_mtod_offset((m), struct tcp_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv6_hdr)))
-#define mbuf_ip6_udp_ptr(m) (rte_pktmbuf_mtod_offset((m), struct udp_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv6_hdr)))
 
-#define mbuf_ip4_tcp_dns_header_ptr(m) (rte_pktmbuf_mtod_offset((m), struct tcp_dns_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) + sizeof(struct tcp_hdr)))
-#define mbuf_ip4_udp_dns_header_ptr(m) (rte_pktmbuf_mtod_offset((m), struct dns_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv4_hdr) + sizeof(struct udp_hdr)))
-#define mbuf_ip6_tcp_dns_header_ptr(m) (rte_pktmbuf_mtod_offset((m), struct tcp_dns_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv6_hdr) + sizeof(struct tcp_hdr)))
-#define mbuf_ip6_udp_dns_header_ptr(m) (rte_pktmbuf_mtod_offset((m), struct dns_hdr *, sizeof(struct ether_hdr) + sizeof(struct ipv6_hdr) + sizeof(struct udp_hdr)))
 
 #define DNS_PORT 53
 #define IPv4_ADDR_LEN 4
